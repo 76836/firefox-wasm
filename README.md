@@ -1,15 +1,33 @@
 # Firefox WASM (static)
 
-Static mirror of [Puter Firefox-in-WASM](https://developer.puter.com/labs/firefox-wasm/) for self-hosting on GitHub Pages.
-
-- **No setup screen** — auto-launches with GPU on, JIT off, empty Wisp (no networking yet)
-- **SharedArrayBuffer** via `coi-serviceworker.js` (COOP/COEP)
-- Assets: `gecko.wasm.zst` (~34MB) + `chrome-assets.tar.zst` (~18MB)
+Self-hosted [Puter Firefox-in-WASM](https://developer.puter.com/labs/firefox-wasm/) with a **CLI terminal** instead of the splash/setup UI.
 
 ## Open
 
 https://76836.github.io/firefox-wasm/
 
+## CLI
+
+| Command | Meaning |
+|---------|---------|
+| `help` | Commands |
+| `status` / `get` | JSPI, isolation, flags |
+| `set gpu on\|off` | GPU path |
+| `set jit on\|off` | Experimental JIT |
+| `set wisp <url\|off>` | Network proxy (default empty) |
+| `set env KEY=VALUE` | Passed as `?env.KEY=` to Gecko |
+| `set verbosity quiet\|normal\|verbose\|debug` | Log detail |
+| `set autostart on\|off` | Auto `launch` when assets ready (**default off**) |
+| `launch` | Boot Firefox |
+
+`` ` `` toggles the terminal; Esc expands it.
+
+## Notes
+
+- First visit may reload once (`coi-serviceworker` for `SharedArrayBuffer`).
+- Needs **WebAssembly JSPI** (Chrome/Edge recent; Firefox needs `javascript.options.wasm_js_promise_integration`).
+- ~52MB assets (`gecko.wasm.zst` + `chrome-assets.tar.zst`).
+
 ## License
 
-Upstream is MPL-2.0 (Mozilla / HeyPuter firefox-wasm). This packaging is for local tinkering.
+Upstream MPL-2.0 (Mozilla / HeyPuter). Packaging for local tinkering.
