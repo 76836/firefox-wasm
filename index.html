@@ -6,10 +6,11 @@
   <meta name="theme-color" content="#000000" />
   <title>Firefox</title>
   <link rel="icon" href="./assets/firefox-icon.png" />
-  <link rel="stylesheet" href="./terminal.css?v=7" />
+  <link rel="stylesheet" href="./app.css?v=10" />
 </head>
 <body>
-  <section id="splash" class="sr">
+  <!-- Upstream Gecko binds these IDs (also auto-created by gecko-host if missing) -->
+  <section id="splash" class="sr" aria-hidden="true">
     <div id="splash-shell" class="stage">
       <div id="stage-card" class="stage">
         <div class="progress-track"><div id="progress-fill"></div></div>
@@ -19,7 +20,8 @@
       </div>
       <button id="start-btn" type="button">Launch</button>
       <p id="jspi-note" hidden></p>
-      <details class="advanced"><summary></summary>
+      <details class="advanced">
+        <summary></summary>
         <input type="checkbox" id="opt-gpu" checked />
         <input type="checkbox" id="opt-jit" />
         <input type="text" id="opt-wisp" value="" />
@@ -28,16 +30,17 @@
     </div>
   </section>
 
-  <!-- Polished mode splash (shown when ?mode=polished) -->
-  <div id="polish" class="polish hide" aria-live="polite">
-    <img class="polish-logo" src="./assets/firefox-icon.png" alt="Firefox" width="96" height="96" />
+  <canvas id="screen" width="1" height="1" tabindex="0"></canvas>
+
+  <!-- Polished splash -->
+  <div id="polish" class="polish hide">
+    <img class="polish-logo" src="./assets/firefox-icon.png" alt="" width="96" height="96" />
     <div class="polish-name">Firefox</div>
-    <div id="polish-status" class="polish-status">Starting…</div>
+    <div id="polish-status" class="polish-status">Loading…</div>
     <div class="polish-bar"><div id="polish-fill"></div></div>
   </div>
 
-  <canvas id="screen" width="1" height="1" tabindex="0"></canvas>
-
+  <!-- Debug terminal -->
   <div id="term" class="term">
     <div id="term-out" class="term-out"></div>
     <div class="term-in-row">
@@ -46,20 +49,19 @@
     </div>
   </div>
 
-  <!-- Mobile soft-keyboard capture -->
-  <textarea id="kb-capture" class="kb-capture" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="text"></textarea>
+  <textarea id="kb-capture" class="kb-capture" autocomplete="off" spellcheck="false"></textarea>
 
   <div id="fabs" class="fabs">
-    <button type="button" id="btn-term" class="fab" aria-label="Terminal">>_</button>
-    <button type="button" id="btn-kb" class="fab" aria-label="Keyboard">⌨</button>
-    <button type="button" id="btn-launch" class="fab fab-launch hide" aria-label="Launch">▶</button>
+    <button type="button" id="btn-term" class="fab" title="Terminal">>_</button>
+    <button type="button" id="btn-kb" class="fab" title="Keyboard">⌨</button>
+    <button type="button" id="btn-launch" class="fab fab-go hide" title="Launch">▶</button>
   </div>
-  <input type="file" id="file-upload" multiple hidden />
 
-  <script src="./coi-serviceworker.js?v=7"></script>
-  <script src="./webdesk-fs.js?v=7"></script>
-  <script src="./net/tailscale.js?v=7"></script>
-  <script src="./cli.js?v=7"></script>
-  <script type="module" src="./assets/index-D39giZCc.js?v=7"></script>
+  <!-- Order: COI → host (stable) → optional helpers → UI → upstream engine -->
+  <script src="./coi-serviceworker.js?v=10"></script>
+  <script src="./gecko-host.js?v=10"></script>
+  <script src="./webdesk-fs.js?v=10"></script>
+  <script src="./ui.js?v=10"></script>
+  <script type="module" src="./assets/index-D39giZCc.js?v=10"></script>
 </body>
 </html>

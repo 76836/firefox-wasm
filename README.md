@@ -2,23 +2,30 @@
 
 https://76836.github.io/firefox-wasm/
 
+## Architecture
+
+| File | Role |
+|------|------|
+| **`gecko-host.js`** | **Stable.** Boot API, viewport, upstream DOM, launch. Edit rarely. |
+| `ui.js` | CLI + polished splash. Safe to rewrite. |
+| `assets/index-*.js` | Upstream Puter/Gecko engine (patched: no Puter Wisp fetch, HTTP cache). |
+| `webdesk-fs.js` | Optional WebDesk Files → OPFS sync |
+| `coi-serviceworker.js` | SharedArrayBuffer + asset cache |
+
+```js
+GeckoHost.init()
+GeckoHost.launch({ gpu, jit, wisp })
+GeckoHost.on(GeckoHost.EV.ready, ...)
+GeckoHost.on(GeckoHost.EV.booted, ...)
+GeckoHost.on(GeckoHost.EV.progress, ...)
+GeckoHost.on(GeckoHost.EV.error, ...)
+```
+
 ## Modes
 
-| URL | Behavior |
-|-----|----------|
-| `/?mode=polished` | App-center mode: logo splash, no terminal/FABs, auto-launch |
-| `/` | Debug CLI |
+- `/` — debug terminal (`launch`, `help`)
+- `/?mode=polished` — splash only, auto-launch (App Center)
 
-## CLI (debug)
+## License
 
-`launch` · `sync` (WebDesk Files → OPFS) · `set lowres on\|off` · `tailscale status` · `set wisp wss://…`
-
-Viewport: `innerWidth` × `innerHeight` only. Lowres uses half size for **both** buffer and CSS (centered, no stretch).
-
-## WebDesk
-
-Files app data (`IndexedDB WebDeskFiles`) is mirrored into OPFS `webdesk/` on launch.
-
-## Tailscale
-
-Gecko uses **Wisp**, not a TUN. WebVM’s Tailscale stack does not drop in directly. Scaffold is in `net/tailscale.js`. Near-term: run a Wisp server on a tailnet machine and `set wisp wss://…`.
+Upstream MPL-2.0 (Mozilla / HeyPuter).
