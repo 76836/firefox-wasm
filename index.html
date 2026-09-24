@@ -4,9 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#000000" />
-  <title>Firefox WASM</title>
-  <link rel="icon" type="image/webp" href="logo.webp" />
-  <link rel="stylesheet" href="./terminal.css?v=4" />
+  <title>Firefox</title>
+  <link rel="icon" href="https://www.mozilla.org/media/img/favicons/firefox/browser/favicon-196x196.ce953d15ea50.png" />
+  <link rel="stylesheet" href="./terminal.css?v=5" />
 </head>
 <body>
   <section id="splash" class="sr">
@@ -28,7 +28,15 @@
     </div>
   </section>
 
-  <canvas id="screen" width="1024" height="768" tabindex="0"></canvas>
+  <!-- Polished mode splash (shown when ?mode=polished) -->
+  <div id="polish" class="polish hide" aria-live="polite">
+    <img class="polish-logo" src="https://www.mozilla.org/media/img/favicons/firefox/browser/favicon-196x196.ce953d15ea50.png" alt="Firefox" width="96" height="96" />
+    <div class="polish-name">Firefox</div>
+    <div id="polish-status" class="polish-status">Starting…</div>
+    <div class="polish-bar"><div id="polish-fill"></div></div>
+  </div>
+
+  <canvas id="screen" width="1" height="1" tabindex="0"></canvas>
 
   <div id="term" class="term">
     <div id="term-out" class="term-out"></div>
@@ -38,12 +46,20 @@
     </div>
   </div>
 
-  <button type="button" id="btn-term" class="fab" aria-label="Terminal">>_</button>
-  <button type="button" id="btn-launch" class="fab fab-launch hide" aria-label="Launch">▶</button>
-  <input type="file" id="file-upload" multiple />
+  <!-- Mobile soft-keyboard capture -->
+  <textarea id="kb-capture" class="kb-capture" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="text"></textarea>
 
-  <script src="./coi-serviceworker.js?v=4"></script>
-  <script src="./cli.js?v=4"></script>
-  <script type="module" src="./assets/index-D39giZCc.js?v=4"></script>
+  <div id="fabs" class="fabs">
+    <button type="button" id="btn-term" class="fab" aria-label="Terminal">>_</button>
+    <button type="button" id="btn-kb" class="fab" aria-label="Keyboard">⌨</button>
+    <button type="button" id="btn-launch" class="fab fab-launch hide" aria-label="Launch">▶</button>
+  </div>
+  <input type="file" id="file-upload" multiple hidden />
+
+  <script src="./coi-serviceworker.js?v=5"></script>
+  <script src="./webdesk-fs.js?v=5"></script>
+  <script src="./net/tailscale.js?v=5"></script>
+  <script src="./cli.js?v=5"></script>
+  <script type="module" src="./assets/index-D39giZCc.js?v=5"></script>
 </body>
 </html>

@@ -1,40 +1,52 @@
 * { box-sizing: border-box; margin: 0; }
 html, body {
-  height: 100%;
-  width: 100%;
-  background: #000;
-  color: #b0b0b0;
+  width: 100%; height: 100%;
+  background: #000; color: #b0b0b0;
   font: 14px/1.4 ui-monospace, Menlo, Consolas, monospace;
-  overscroll-behavior: none;
   overflow: hidden;
-  position: fixed;
-  inset: 0;
+  position: fixed; inset: 0;
   touch-action: manipulation;
 }
 .sr {
   position: absolute; width: 1px; height: 1px; overflow: hidden;
   clip: rect(0 0 0 0); opacity: 0; pointer-events: none;
 }
+.hide { display: none !important; }
+
+/* Canvas: 1 CSS pixel = 1 buffer pixel. Centered when smaller (lowres). */
 #screen {
   position: fixed;
-  top: 0; left: 0;
-  width: 100%;
-  height: 100%;
-  /* Prefer dynamic viewport when supported without classic 100vw overflow */
-  width: 100dvw;
-  height: 100dvh;
-  max-width: 100%;
-  max-height: 100%;
+  left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
   background: #000;
   z-index: 1;
   display: block;
-  /* Avoid CSS scaling mismatch — size follows layout; buffer set in JS */
-  object-fit: fill;
   touch-action: none;
 }
-#screen.lowres {
-  image-rendering: auto;
+
+/* Polished splash */
+.polish {
+  position: fixed; inset: 0; z-index: 25;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 14px;
+  background: #0c0c0e;
+  color: #eee;
+  font-family: system-ui, -apple-system, sans-serif;
 }
+.polish-logo { border-radius: 20px; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
+.polish-name { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; }
+.polish-status { font-size: 13px; color: #888; min-height: 1.2em; }
+.polish-bar {
+  width: min(220px, 50vw); height: 3px;
+  background: #222; border-radius: 2px; overflow: hidden;
+}
+#polish-fill {
+  height: 100%; width: 0%;
+  background: #ff7139;
+  transition: width 0.2s ease;
+}
+
 .term {
   position: fixed; inset: 0; z-index: 20;
   display: flex; flex-direction: column;
@@ -42,11 +54,9 @@ html, body {
   padding: 10px 12px calc(12px + env(safe-area-inset-bottom));
   padding-top: calc(10px + env(safe-area-inset-top));
 }
-.term.hide { display: none !important; }
 .term-out {
   flex: 1; overflow-y: auto;
   white-space: pre-wrap; word-break: break-word;
-  -webkit-overflow-scrolling: touch;
 }
 .term-out .e { color: #ff6666; }
 .term-out .w { color: #ffcc66; }
@@ -54,36 +64,44 @@ html, body {
 .term-out .dim { color: #555; }
 .term-in-row {
   display: flex; gap: 8px; align-items: center;
-  border-top: 1px solid #1a1a1a;
-  padding-top: 8px;
-  min-height: 44px;
+  border-top: 1px solid #1a1a1a; padding-top: 8px; min-height: 44px;
 }
 .p { color: #6699ff; }
 #term-in {
   flex: 1; background: transparent; border: 0; outline: 0;
-  color: #eee; font: inherit; font-size: 16px;
-  min-height: 44px;
+  color: #eee; font: inherit; font-size: 16px; min-height: 44px;
 }
-.fab {
+
+.fabs {
   position: fixed;
   z-index: 30;
   right: max(12px, env(safe-area-inset-right));
   bottom: max(12px, env(safe-area-inset-bottom));
-  width: 48px; height: 48px;
-  border-radius: 50%;
-  border: 1px solid #333;
-  background: #111;
-  color: #ccc;
-  font: 16px/1 ui-monospace, monospace;
+  display: flex; flex-direction: column; gap: 10px;
+  align-items: flex-end;
+}
+.fab {
+  width: 48px; height: 48px; border-radius: 50%;
+  border: 1px solid #333; background: #111; color: #ccc;
+  font: 16px/1 ui-monospace, system-ui, sans-serif;
   box-shadow: 0 4px 16px rgba(0,0,0,0.5);
   touch-action: manipulation;
 }
-.fab-launch {
-  right: max(68px, calc(env(safe-area-inset-right) + 56px));
-  background: #1a3a1a;
-  color: #8f8;
-  border-color: #2a5a2a;
+.fab-launch { background: #1a3a1a; color: #8f8; border-color: #2a5a2a; }
+.fabs.hide, .fab.hide { display: none !important; }
+
+/* Soft keyboard capture — off-screen but focusable */
+.kb-capture {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  height: 1px; opacity: 0;
+  border: 0; padding: 0; resize: none;
+  z-index: 15;
 }
-.fab.hide { display: none !important; }
-.term:not(.hide) ~ .fab { opacity: 0.35; }
-#file-upload { display: none; }
+.kb-capture.on {
+  height: 40px; opacity: 1;
+  background: #111; color: #eee;
+  border-top: 1px solid #333;
+  padding: 8px 12px;
+  font-size: 16px;
+}
