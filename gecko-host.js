@@ -177,6 +177,13 @@
       emit(EV.error, { message: "assets not ready" });
       return false;
     }
+    if (!window.crossOriginIsolated) {
+      emit(EV.error, {
+        message:
+          "Not crossOriginIsolated — SharedArrayBuffer blocked. Open as a top-level window (not an iframe).",
+      });
+      return false;
+    }
     if (!jspiOk()) {
       emit(EV.error, {
         message:

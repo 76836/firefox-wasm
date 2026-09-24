@@ -1,6 +1,5 @@
 /**
  * ui.js — CLI + polished splash. Talks only to GeckoHost.
- * Rewrite freely; do not put Gecko boot logic here.
  */
 (function () {
   const params = new URLSearchParams(location.search);
@@ -12,16 +11,12 @@
   const out = $("term-out");
   const input = $("term-in");
   const polish = $("polish");
-  const polishStatus = $("polish-status");
   const polishFill = $("polish-fill");
   const fabs = $("fabs");
   const kbCap = $("kb-capture");
 
   function log(msg, cls) {
-    if (polished) {
-      if (polishStatus && msg) polishStatus.textContent = msg;
-      return;
-    }
+    if (polished) return; // silent polished
     if (!out) return;
     const d = document.createElement("div");
     if (cls) d.className = cls;
@@ -31,12 +26,9 @@
     out.scrollTop = out.scrollHeight;
   }
 
-  function setProgress(pct, msg) {
-    if (!polished) return;
-    if (msg && polishStatus) polishStatus.textContent = msg;
-    if (pct != null && polishFill) {
-      polishFill.style.width = Math.round(Math.min(1, Math.max(0, pct)) * 100) + "%";
-    }
+  function setProgress(pct) {
+    if (!polished || !polishFill || pct == null) return;
+    polishFill.style.width = Math.round(Math.min(1, Math.max(0, pct)) * 100) + "%";
   }
 
   function hideChrome() {
@@ -55,22 +47,39 @@
     if (show) setTimeout(() => input?.focus(), 30);
   }
 
+  function isolationOk() {
+    return !!window.crossOriginIsolated;
+  }
+
+  function showIsolationHelp() {
+    if (document.getElementById("coi-banner")) return;
+    const inIframe = window !== window.top;
+    const b = document.createElement("div");
+    b.id = "coi-banner";
+    b.className = "coi-banner";
+    b.innerHTML = inIframe
+      ? "Firefox needs a top-level window for SharedArrayBuffer. Open it outside this iframe (WebDesk should use a popup)."
+      : "Page is not cross-origin isolated. Hard-refresh once. If it keeps failing, clear site data for this origin.";
+    document.body.appendChild(b);
+  }
+
   async function doLaunch() {
+    if (!isolationOk()) {
+      log("not crossOriginIsolated — cannot load Gecko workers", "e");
+      showIsolationHelp();
+      return;
+    }
     if (window.WebDeskFS) {
-      setProgress(0.35, "Syncing files…");
+      setProgress(0.35);
       try {
         await window.WebDeskFS.syncToOpfs(() => {});
       } catch (_) {}
     }
-    setProgress(0.5, "Launching…");
-    const ok = await window.GeckoHost.launch({
-      gpu: true,
-      jit: false,
-    });
-    if (!ok) setProgress(null, "Launch failed — see status");
+    setProgress(0.55);
+    const ok = await window.GeckoHost.launch({ gpu: true, jit: false });
+    if (!ok) log("launch refused", "e");
   }
 
-  // Wire GeckoHost events
   function bind() {
     const H = window.GeckoHost;
     if (!H) {
@@ -80,11 +89,11 @@
     H.on(H.EV.progress, (e) => {
       const p = e.detail || {};
       if (p.message) log(p.message, "dim");
-      if (p.percent != null) setProgress(p.percent, p.message);
+      if (p.percent != null) setProgress(p.percent);
     });
     H.on(H.EV.ready, () => {
       log("ready", "ok");
-      setProgress(0.8, "Ready");
+      setProgress(0.85);
       $("btn-launch")?.classList.remove("hide");
       if (polished || localStorage.getItem("ffwasm.autostart") === "1") {
         doLaunch();
@@ -92,24 +101,20 @@
     });
     H.on(H.EV.booted, () => {
       log("firefox up", "ok");
-      setProgress(1, "");
+      setProgress(1);
       hideChrome();
       H.sizeCanvas();
     });
     H.on(H.EV.error, (e) => {
       log((e.detail && e.detail.message) || "error", "e");
-      setProgress(null, (e.detail && e.detail.message) || "Error");
-      if (polished) {
-        // surface error on splash, keep visible
-        polish?.classList.remove("hide");
-      }
     });
   }
 
   function runCmd(line) {
     const s = (line || "").trim();
     if (!s) return;
-    const parts = s.match(/(?:[^\s"]+|"[^"]*")+/g)?.map((x) => x.replace(/^"|"$/g, "")) || [];
+    const parts =
+      s.match(/(?:[^\s"]+|"[^"]*")+/g)?.map((x) => x.replace(/^"|"$/g, "")) || [];
     const c = (parts[0] || "").toLowerCase();
     const H = window.GeckoHost;
 
@@ -129,7 +134,7 @@
           " jspi=" +
           H.jspiOk() +
           " coi=" +
-          !!crossOriginIsolated +
+          isolationOk() +
           " " +
           v.w +
           "x" +
@@ -171,7 +176,7 @@
       term?.classList.add("hide");
       fabs?.classList.add("hide");
       polish?.classList.remove("hide");
-      setProgress(0.05, "Loading…");
+      setProgress(0.08);
     } else {
       polish?.classList.add("hide");
       log("firefox-wasm");
@@ -200,9 +205,12 @@
         } catch (_) {}
       }
     });
+
+    if (!isolationOk() && window !== window.top) {
+      showIsolationHelp();
+    }
   }
 
-  // Boot order: host init → UI → (upstream module loads separately in HTML)
   function start() {
     if (!window.GeckoHost) {
       console.error("GeckoHost not loaded");

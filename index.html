@@ -3,13 +3,12 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#000000" />
+  <meta name="theme-color" content="#38383d" />
   <title>Firefox</title>
-  <link rel="icon" href="./assets/firefox-icon.png" />
-  <link rel="stylesheet" href="./app.css?v=10" />
+  <link rel="icon" href="./assets/firefox-icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="./app.css?v=11" />
 </head>
 <body>
-  <!-- Upstream Gecko binds these IDs (also auto-created by gecko-host if missing) -->
   <section id="splash" class="sr" aria-hidden="true">
     <div id="splash-shell" class="stage">
       <div id="stage-card" class="stage">
@@ -32,15 +31,12 @@
 
   <canvas id="screen" width="1" height="1" tabindex="0"></canvas>
 
-  <!-- Polished splash -->
+  <!-- Polished: logo + bar only, solid grey -->
   <div id="polish" class="polish hide">
-    <img class="polish-logo" src="./assets/firefox-icon.png" alt="" width="96" height="96" />
-    <div class="polish-name">Firefox</div>
-    <div id="polish-status" class="polish-status">Loading…</div>
+    <img class="polish-logo" src="./assets/firefox-icon.svg" alt="" width="96" height="96" />
     <div class="polish-bar"><div id="polish-fill"></div></div>
   </div>
 
-  <!-- Debug terminal -->
   <div id="term" class="term">
     <div id="term-out" class="term-out"></div>
     <div class="term-in-row">
@@ -57,11 +53,10 @@
     <button type="button" id="btn-launch" class="fab fab-go hide" title="Launch">▶</button>
   </div>
 
-  <!-- Order: COI → host (stable) → optional helpers → UI → upstream engine -->
-  <script src="./coi-serviceworker.js?v=10"></script>
-  <script src="./gecko-host.js?v=10"></script>
-  <script src="./webdesk-fs.js?v=10"></script>
-  <script src="./ui.js?v=10"></script>
-  <script type="module" src="./assets/index-D39giZCc.js?v=10"></script>
+  <script src="./coi-serviceworker.js?v=11"></script>
+  <script src="./gecko-host.js?v=11"></script>
+  <script src="./webdesk-fs.js?v=11"></script>
+  <script src="./ui.js?v=11"></script>
+  <script type="module" src="./assets/index-D39giZCc.js?v=11"></script>
 </body>
 </html>
