@@ -3,54 +3,43 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Firefox WASM — CLI</title>
-  <link id="favicon" rel="icon" type="image/webp" href="logo.webp" />
-  <!-- Upstream demo CSS (progress bits unused but harmless) -->
-  <link rel="stylesheet" crossorigin href="./assets/index-CJZf4zMx.css" />
+  <title>Firefox WASM</title>
+  <link rel="icon" type="image/webp" href="logo.webp" />
   <link rel="stylesheet" href="./terminal.css" />
 </head>
 <body>
-  <!-- Upstream-required DOM (hidden). Do not remove — index-*.js binds these. -->
-  <section id="splash" class="upstream-hidden" aria-hidden="true">
-    <div id="splash-shell">
-      <h1 id="project-title">Firefox WASM</h1>
-      <div id="stage-card">
-        <div id="progress-fill"></div>
+  <!-- Upstream DOM (must exist; keep minimal structure) -->
+  <section id="splash" class="sr">
+    <div id="splash-shell" class="stage">
+      <div id="stage-card" class="stage">
+        <div class="progress-track"><div id="progress-fill"></div></div>
         <span id="progress-phase"></span>
         <span id="progress-percent"></span>
-        <p id="splash-status" class="splash-status"></p>
+        <p id="splash-status"></p>
       </div>
-      <button id="start-btn" type="button">Launch Firefox</button>
-      <p id="jspi-note" class="jspi-note" hidden></p>
-      <details class="advanced">
-        <summary>advanced</summary>
-        <label><input type="checkbox" id="opt-gpu" checked /> GPU</label>
-        <label><input type="checkbox" id="opt-jit" /> JIT</label>
-        <label>Wisp <input type="text" id="opt-wisp" spellcheck="false" autocomplete="off" /></label>
+      <button id="start-btn" type="button">Launch</button>
+      <p id="jspi-note" hidden></p>
+      <details class="advanced"><summary></summary>
+        <input type="checkbox" id="opt-gpu" checked />
+        <input type="checkbox" id="opt-jit" />
+        <input type="text" id="opt-wisp" value="" />
       </details>
-      <div id="console-output" class="console-box" role="log"></div>
+      <div id="console-output"></div>
     </div>
   </section>
 
   <canvas id="screen" width="1024" height="768" tabindex="0"></canvas>
 
-  <!-- CLI shell -->
-  <div id="term" class="term" role="application" aria-label="Firefox WASM terminal">
-    <div class="term-bar">
-      <span class="term-title">firefox-wasm</span>
-      <span id="term-ready" class="term-badge">loading assets…</span>
-      <span class="term-hint">` to toggle · launch to start</span>
-    </div>
-    <div id="term-out" class="term-out" aria-live="polite"></div>
+  <div id="term" class="term">
+    <div id="term-out" class="term-out"></div>
     <div class="term-in-row">
-      <span class="term-prompt">$</span>
-      <input id="term-in" class="term-in" type="text" autocomplete="off" spellcheck="false"
-             placeholder="help · status · set · launch" />
+      <span class="p">$</span>
+      <input id="term-in" type="text" autocomplete="off" spellcheck="false" />
     </div>
   </div>
 
   <script src="./coi-serviceworker.js"></script>
   <script src="./cli.js"></script>
-  <script type="module" crossorigin src="./assets/index-D39giZCc.js"></script>
+  <script type="module" src="./assets/index-D39giZCc.js"></script>
 </body>
 </html>
