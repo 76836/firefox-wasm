@@ -76,7 +76,6 @@
       } catch (e) {
         console.warn("[WebDeskFS] pre-launch failed", e);
       }
-    } catch (_) {}
     }
     setProgress(0.55);
     const ok = await window.GeckoHost.launch({ gpu: true, jit: false });
