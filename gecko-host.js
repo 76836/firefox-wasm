@@ -139,6 +139,7 @@
         if (/front-end booted/i.test(s)) {
           booted = true;
           emit(EV.booted, {});
+          try { softenSessionStore(); } catch (_) {}
           sizeCanvas();
           try {
             window.dispatchEvent(new Event("resize"));
@@ -202,9 +203,15 @@
       wispEl.value = "";
     }
 
+    // OPFS mount is opt-in only (?opfs=1). Forcing it collides with SessionStore
+    // profile I/O and has been observed to trip wasm "unreachable" freezes.
     try {
       const u = new URL(location.href);
-      u.searchParams.set("env.GECKO_OPFS_MOUNT", "1");
+      if (u.searchParams.get("opfs") === "1" || opts.opfs === true) {
+        u.searchParams.set("env.GECKO_OPFS_MOUNT", "1");
+      } else {
+        u.searchParams.delete("env.GECKO_OPFS_MOUNT");
+      }
       history.replaceState(null, "", u.pathname + u.search + u.hash);
     } catch (_) {}
 
@@ -232,6 +239,33 @@
     if (el("opt-wisp")) el("opt-wisp").value = url || "";
   }
 
+
+  /** Soften SessionStore after front-end is up (best-effort). */
+  function softenSessionStore() {
+    try {
+      // Upstream chrome-demo sometimes exposes eval helpers on window
+      const ev =
+        window.evalChrome ||
+        window.chromeEval ||
+        (window.Module && window.Module.evalChrome);
+      if (typeof ev !== "function") return false;
+      ev(`(() => {
+        try {
+          const p = Services.prefs;
+          p.setBoolPref("browser.sessionstore.resume_from_crash", false);
+          p.setIntPref("browser.sessionstore.interval", 600000);
+          p.setIntPref("browser.sessionstore.max_tabs_undo", 5);
+          p.setIntPref("browser.sessionstore.max_windows_undo", 2);
+          p.setBoolPref("browser.sessionstore.restore_on_demand", true);
+          return "sessionstore-softened";
+        } catch (e) { return String(e); }
+      })()`);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   function init() {
     ensureUpstreamDom();
     sizeCanvas();
@@ -257,6 +291,7 @@
     jspiOk,
     isReady: () => ready,
     isBooted: () => booted,
+    softenSessionStore,
     setGpu,
     setJit,
     setWisp,

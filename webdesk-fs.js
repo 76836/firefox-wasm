@@ -1,11 +1,7 @@
 /**
- * Sync WebDesk Files (IndexedDB "WebDeskFiles") into:
- *  1) Browser OPFS under webdesk/ and home/web_user/Downloads|WebDesk
- *  2) Emscripten/Gecko FS (Module.FS) when available after boot
- *
- * WebDesk stores: objectStore("fs").get("data") → tree of nodes
- *   { root: { children: [...] }, home: {...}, f_xxx: { type:"file", name, content: dataUrl } }
- * Legacy files: isLegacy true → payload in localStorage under item.name path.
+ * Sync WebDesk Files → OPFS sandbox + optional Module.FS.
+ * IMPORTANT: never write under profile/ or sessionstore paths — that races
+ * SessionStore and can freeze the gecko-wasm pthread with "unreachable".
  */
 window.WebDeskFS = (function () {
   function getDB() {
@@ -72,7 +68,6 @@ window.WebDeskFS = (function () {
     if (node.content != null && node.content !== "") {
       return dataUrlToBytes(node.content);
     }
-    // Legacy: payload lived in localStorage under path-like name
     if (node.isLegacy && node.name) {
       try {
         const raw = localStorage.getItem(node.name);
@@ -98,7 +93,6 @@ window.WebDeskFS = (function () {
     await w.close();
   }
 
-  /** Collect every file node with resolved bytes + relative path from home/root */
   function collectFiles(tree) {
     const out = [];
     if (!tree || typeof tree !== "object") return out;
@@ -122,111 +116,84 @@ window.WebDeskFS = (function () {
       const bytes = fileBytes(node);
       if (!bytes || !bytes.length) continue;
       const folderParts = pathOf(node.parentId || "root");
-      const name = safeName(node.isLegacy ? (node.name || "").split("/").pop() : node.name || id);
+      const name = safeName(
+        node.isLegacy ? (node.name || "").split("/").pop() : node.name || id
+      );
       out.push({ name, bytes, folderParts, id });
     }
     return out;
   }
 
+  /** OPFS only under webdesk-files/ — isolated from Gecko profile */
   async function syncToOpfs(log = () => {}) {
     if (!navigator.storage?.getDirectory) {
-      log("OPFS unavailable in this browser");
+      log("OPFS unavailable");
       return { files: 0, reason: "no-opfs" };
     }
-
     const tree = await loadTree();
     if (!tree || !tree.root) {
-      log("no WebDesk Files data in IndexedDB (WebDeskFiles)");
+      log("no WebDesk Files data");
       return { files: 0, reason: "no-tree" };
     }
-
     const files = collectFiles(tree);
     if (!files.length) {
-      log("WebDesk tree has no file payloads (empty or legacy-only without localStorage)");
-      return { files: 0, reason: "no-files", treeKeys: Object.keys(tree).length };
+      log("no file payloads to sync");
+      return { files: 0, reason: "no-files" };
     }
 
     const root = await navigator.storage.getDirectory();
-    const webdesk = await ensureDir(root, ["webdesk"]);
-    const downloads = await ensureDir(root, ["home", "web_user", "Downloads"]);
-    const webdeskHome = await ensureDir(root, ["home", "web_user", "WebDesk"]);
-    // also flat downloads alias some builds look for
-    const downloadsAlt = await ensureDir(root, ["Downloads"]);
+    // Sandbox only — do NOT write profile/, sessionstore*, or home/web_user
+    const base = await ensureDir(root, ["webdesk-files"]);
 
     let count = 0;
     for (const f of files) {
       try {
-        // Mirror full folder structure under OPFS/webdesk
-        const dir = await ensureDir(webdesk, f.folderParts);
+        const dir = await ensureDir(base, f.folderParts);
         await writeOpfsFile(dir, f.name, f.bytes);
-
-        // Always also drop a copy in Downloads + WebDesk for easy find
-        await writeOpfsFile(downloads, f.name, f.bytes);
-        await writeOpfsFile(downloadsAlt, f.name, f.bytes);
-        const wd = await ensureDir(webdeskHome, f.folderParts);
-        await writeOpfsFile(wd, f.name, f.bytes);
-
         count++;
-        log("sync " + [...f.folderParts, f.name].join("/"));
+        log("sync webdesk-files/" + [...f.folderParts, f.name].join("/"));
       } catch (e) {
         log("fail " + f.name + ": " + (e.message || e));
       }
     }
-
-    log("WebDesk sync done (" + count + " files → OPFS webdesk + Downloads)");
+    log("WebDesk sync done (" + count + " → OPFS/webdesk-files)");
     return { files: count };
   }
 
-  /** Inject into Gecko/Emscripten FS if Module.FS is exposed */
   function injectIntoModuleFs(log = () => {}) {
     return (async () => {
-      const Mod =
-        window.Module ||
-        window.FirefoxModule ||
-        window.geckoModule ||
-        null;
+      const Mod = window.Module || window.FirefoxModule || null;
       const FS = Mod && (Mod.FS || Mod.fs);
       if (!FS || typeof FS.writeFile !== "function") {
-        log("Module.FS not available yet");
+        log("Module.FS not available (skip memfs inject)");
         return { files: 0, reason: "no-module-fs" };
       }
-
       const tree = await loadTree();
       const files = collectFiles(tree || {});
       const mk = (p) => {
         try {
           FS.mkdirTree(p);
         } catch (_) {
-          try {
-            const parts = p.split("/").filter(Boolean);
-            let cur = "";
-            for (const part of parts) {
-              cur += "/" + part;
-              try {
-                FS.mkdir(cur);
-              } catch (_) {}
-            }
-          } catch (_) {}
+          const parts = p.split("/").filter(Boolean);
+          let cur = "";
+          for (const part of parts) {
+            cur += "/" + part;
+            try {
+              FS.mkdir(cur);
+            } catch (_) {}
+          }
         }
       };
-
-      mk("/home/web_user/Downloads");
-      mk("/home/web_user/WebDesk");
-      mk("/Downloads");
-
+      // Only under a dedicated tree — avoid profile/sessionstore
+      mk("/webdesk-files");
       let count = 0;
       for (const f of files) {
         try {
-          const rel = ["home", "web_user", "WebDesk", ...f.folderParts].join("/");
+          const rel = ["webdesk-files", ...f.folderParts].join("/");
           mk("/" + rel);
-          const path1 = "/" + rel + "/" + f.name;
-          const path2 = "/home/web_user/Downloads/" + f.name;
-          const path3 = "/Downloads/" + f.name;
-          FS.writeFile(path1, f.bytes);
-          FS.writeFile(path2, f.bytes);
-          FS.writeFile(path3, f.bytes);
+          FS.writeFile("/" + rel + "/" + f.name, f.bytes);
           count++;
-          log("FS " + path2);
+          log("FS /" + rel + "/" + f.name);
         } catch (e) {
           log("FS fail " + f.name + ": " + (e.message || e));
         }
@@ -238,9 +205,26 @@ window.WebDeskFS = (function () {
 
   async function syncAll(log = () => {}) {
     const a = await syncToOpfs(log);
+    // Delay memfs inject so SessionStore can finish its first read
+    await new Promise((r) => setTimeout(r, 1500));
     const b = await injectIntoModuleFs(log);
     return { opfs: a, memfs: b, files: (a.files || 0) + (b.files || 0) };
   }
 
-  return { loadTree, collectFiles, syncToOpfs, injectIntoModuleFs, syncAll };
+  /**
+   * One-time cleanup of OPFS dirs we used to write that can poison the profile.
+   */
+  async function scrubLegacyOpfs(log = () => {}) {
+    if (!navigator.storage?.getDirectory) return;
+    const root = await navigator.storage.getDirectory();
+    for (const name of ["profile", "Downloads"]) {
+      try {
+        // Best-effort: remove only if empty-ish; ignore errors
+        await root.removeEntry(name, { recursive: true });
+        log("scrubbed OPFS/" + name);
+      } catch (_) {}
+    }
+  }
+
+  return { loadTree, collectFiles, syncToOpfs, injectIntoModuleFs, syncAll, scrubLegacyOpfs };
 })();

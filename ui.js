@@ -71,7 +71,10 @@
     }
     if (window.WebDeskFS) {
       try {
-        const r = await window.WebDeskFS.syncAll((m) => console.log("[WebDeskFS]", m));
+        // Remove old OPFS profile/ pollution that races SessionStore
+        await window.WebDeskFS.scrubLegacyOpfs?.((m) => console.log("[WebDeskFS]", m));
+        // OPFS sandbox only before launch; memfs inject waits until post-boot
+        const r = await window.WebDeskFS.syncToOpfs((m) => console.log("[WebDeskFS]", m));
         console.log("[WebDeskFS] pre-launch", r);
       } catch (e) {
         console.warn("[WebDeskFS] pre-launch failed", e);
@@ -233,7 +236,28 @@
 
   // Re-sync into Gecko FS once front-end is up
   window.GeckoHost?.on?.(window.GeckoHost.EV?.booted || "gecko:booted", () => {
-    window.WebDeskFS?.syncAll?.((m) => console.log("[WebDeskFS]", m)).then((r) =>
-      console.log("[WebDeskFS] post-boot", r)
-    );
+    try { window.GeckoHost.softenSessionStore?.(); } catch (_) {}
+    // Wait so SessionStore can finish first disk read before any FS writes
+    setTimeout(() => {
+      window.WebDeskFS?.injectIntoModuleFs?.((m) => console.log("[WebDeskFS]", m)).then((r) =>
+        console.log("[WebDeskFS] post-boot", r)
+      );
+    }, 2500);
+  });
+
+  // Surface pthread crashes without leaving the shell totally dead
+  window.addEventListener("error", (ev) => {
+    const m = String(ev?.message || ev?.error || "");
+    if (/unreachable|RuntimeError/i.test(m)) {
+      console.warn("[firefox-wasm] gecko worker crashed:", m);
+      try {
+        const term = document.getElementById("term-out");
+        if (term) {
+          const line = document.createElement("div");
+          line.className = "e";
+          line.textContent = "Gecko worker crashed (unreachable). Try hard-refresh + clear site data if it freezes again.";
+          term.appendChild(line);
+        }
+      } catch (_) {}
+    }
   });
