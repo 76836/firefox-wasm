@@ -70,10 +70,13 @@
       return;
     }
     if (window.WebDeskFS) {
-      setProgress(0.35);
       try {
-        await window.WebDeskFS.syncToOpfs(() => {});
-      } catch (_) {}
+        const r = await window.WebDeskFS.syncAll((m) => console.log("[WebDeskFS]", m));
+        console.log("[WebDeskFS] pre-launch", r);
+      } catch (e) {
+        console.warn("[WebDeskFS] pre-launch failed", e);
+      }
+    } catch (_) {}
     }
     setProgress(0.55);
     const ok = await window.GeckoHost.launch({ gpu: true, jit: false });
@@ -144,8 +147,8 @@
     }
     if (c === "launch" || c === "start" || c === "run") return doLaunch();
     if (c === "sync") {
-      window.WebDeskFS?.syncToOpfs((m) => log(m, "dim")).then((r) =>
-        log("synced " + (r?.files || 0), "ok")
+      window.WebDeskFS?.syncAll((m) => log(m, "dim")).then((r) =>
+        log("synced opfs=" + (r?.opfs?.files||0) + " memfs=" + (r?.memfs?.files||0), "ok")
       );
       return;
     }
@@ -227,3 +230,11 @@
     start();
   }
 })();
+
+
+  // Re-sync into Gecko FS once front-end is up
+  window.GeckoHost?.on?.(window.GeckoHost.EV?.booted || "gecko:booted", () => {
+    window.WebDeskFS?.syncAll?.((m) => console.log("[WebDeskFS]", m)).then((r) =>
+      console.log("[WebDeskFS] post-boot", r)
+    );
+  });
