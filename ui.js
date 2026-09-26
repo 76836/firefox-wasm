@@ -218,6 +218,11 @@
       console.error("GeckoHost not loaded");
       return;
     }
+    window.GeckoHost?.on?.(window.GeckoHost.EV?.booted || "gecko:booted", () => {
+      window.WebDeskFS?.injectIntoModuleFs?.((m) => console.log("[WebDeskFS]", m)).then((r) =>
+        console.log("[WebDeskFS] post-boot", r)
+      );
+    });
     window.GeckoHost.init();
     bind();
     setupUi();
@@ -229,11 +234,3 @@
     start();
   }
 })();
-
-
-  // Re-sync into Gecko FS once front-end is up
-  window.GeckoHost?.on?.(window.GeckoHost.EV?.booted || "gecko:booted", () => {
-    window.WebDeskFS?.injectIntoModuleFs?.((m) => console.log("[WebDeskFS]", m)).then((r) =>
-      console.log("[WebDeskFS] post-boot", r)
-    );
-  });
