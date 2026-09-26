@@ -205,8 +205,6 @@ window.WebDeskFS = (function () {
 
   async function syncAll(log = () => {}) {
     const a = await syncToOpfs(log);
-    // Delay memfs inject so SessionStore can finish its first read
-    await new Promise((r) => setTimeout(r, 1500));
     const b = await injectIntoModuleFs(log);
     return { opfs: a, memfs: b, files: (a.files || 0) + (b.files || 0) };
   }
@@ -214,7 +212,7 @@ window.WebDeskFS = (function () {
   /**
    * One-time cleanup of OPFS dirs we used to write that can poison the profile.
    */
-  async function scrubLegacyOpfs(log = () => {}) {
+  async function (log = () => {}) {
     if (!navigator.storage?.getDirectory) return;
     const root = await navigator.storage.getDirectory();
     for (const name of ["profile", "Downloads"]) {
@@ -226,5 +224,5 @@ window.WebDeskFS = (function () {
     }
   }
 
-  return { loadTree, collectFiles, syncToOpfs, injectIntoModuleFs, syncAll, scrubLegacyOpfs };
+  return { loadTree, collectFiles, syncToOpfs, injectIntoModuleFs, syncAll };
 })();
