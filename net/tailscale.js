@@ -102,7 +102,14 @@ window.FFTailscale = (function () {
         state = s;
         log("state " + s);
         if (s === "Running") {
-          // already have netmap maybe
+          try {
+            if (window.WispLocal) {
+              window.WispLocal.enable();
+              log("local Wisp enabled (wss://wisp.local/ts)");
+            }
+          } catch (e) {
+            log("WispLocal enable failed: " + e);
+          }
         }
         if (s === "NeedsLogin") {
           // loginUrl comes via notifyBrowseToURL
