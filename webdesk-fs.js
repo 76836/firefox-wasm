@@ -209,20 +209,5 @@ window.WebDeskFS = (function () {
     return { opfs: a, memfs: b, files: (a.files || 0) + (b.files || 0) };
   }
 
-  /**
-   * One-time cleanup of OPFS dirs we used to write that can poison the profile.
-   */
-  async function (log = () => {}) {
-    if (!navigator.storage?.getDirectory) return;
-    const root = await navigator.storage.getDirectory();
-    for (const name of ["profile", "Downloads"]) {
-      try {
-        // Best-effort: remove only if empty-ish; ignore errors
-        await root.removeEntry(name, { recursive: true });
-        log("scrubbed OPFS/" + name);
-      } catch (_) {}
-    }
-  }
-
   return { loadTree, collectFiles, syncToOpfs, injectIntoModuleFs, syncAll };
 })();
