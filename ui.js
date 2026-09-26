@@ -121,7 +121,7 @@
     const H = window.GeckoHost;
 
     if (c === "help") {
-      log("launch · status · sync · ts login|logout|status · set gpu|jit|wisp|autostart");
+      log("launch · net status|wisp <url>|mode off|remote|local · ts login · sync");
       return;
     }
     if (c === "clear") {
@@ -145,6 +145,26 @@
       return;
     }
     if (c === "launch" || c === "start" || c === "run") return doLaunch();
+
+    if (c === "net" || c.startsWith("net ")) {
+      const sub = c === "net" ? "status" : c.slice(4).trim();
+      const N = window.NetStack;
+      if (!N) { log("NetStack missing", "e"); return; }
+      if (sub === "status" || sub === "") {
+        log(JSON.stringify(N.status(), null, 0), "dim");
+        return;
+      }
+      if (sub.startsWith("wisp ")) {
+        log(JSON.stringify(N.setWisp(sub.slice(5).trim())), "ok");
+        return;
+      }
+      if (sub.startsWith("mode ")) {
+        log(JSON.stringify(N.setMode(sub.slice(5).trim())), "ok");
+        return;
+      }
+      log("net status | wisp wss://host:port/ | mode off|remote|local", "dim");
+      return;
+    }
     if (c === "sync") {
       window.WebDeskFS?.syncAll((m) => log(m, "dim")).then((r) =>
         log("synced opfs=" + (r?.opfs?.files||0) + " memfs=" + (r?.memfs?.files||0), "ok")
@@ -223,6 +243,7 @@
         console.log("[WebDeskFS] post-boot", r)
       );
     });
+    window.NetStack?.boot?.();
     window.GeckoHost.init();
     bind();
     setupUi();

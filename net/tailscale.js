@@ -102,14 +102,7 @@ window.FFTailscale = (function () {
         state = s;
         log("state " + s);
         if (s === "Running") {
-          try {
-            if (window.WispLocal) {
-              window.WispLocal.enable();
-              log("local Wisp enabled (wss://wisp.local/ts)");
-            }
-          } catch (e) {
-            log("WispLocal enable failed: " + e);
-          }
+          log("tailnet up — for full internet set a remote Wisp: net wisp wss://host:port/");
         }
         if (s === "NeedsLogin") {
           // loginUrl comes via notifyBrowseToURL
