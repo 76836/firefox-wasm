@@ -121,7 +121,7 @@
     const H = window.GeckoHost;
 
     if (c === "help") {
-      log("launch · status · sync · set gpu|jit|wisp|autostart");
+      log("launch · status · sync · ts login|logout|status · set gpu|jit|wisp|autostart");
       return;
     }
     if (c === "clear") {
