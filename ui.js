@@ -125,7 +125,8 @@
       log("  version          show build commit", "dim");
       log("  login | ts login open Tailscale login (use an exit node on your tailnet)", "dim");
       log("  ts status        Tailscale + exit node state", "dim");
-      log("  ts peers         list netmap peers / exit flags", "dim");
+      log("  ts peers         list peers (Connect omits exit flags)", "dim");
+      log("  ts use <n>       select peer n as exit for UserNet", "dim");
       log("  online           login + auto-arm exit node path", "dim");
       log("  status           short network / stack summary", "dim");
       log("  launch           start Firefox", "dim");
@@ -234,7 +235,7 @@
             "ok"
           );
         } else {
-          log("  exit    (none — advertise an exit node and approve it in admin)", "w");
+          log("  exit    (not in Connect netmap — run: ts peers, then ts use <n>)", "w");
         }
         if (s.loginUrl && s.state !== "Running") log("  login   " + s.loginUrl, "dim");
         return;
@@ -246,30 +247,72 @@
       }
       if (sub === "peers" || sub === "netmap") {
         const sum = T.summarizeNetMap?.() || { peers: [], peerCount: 0, exitCount: 0, topKeys: [] };
-        log("netmap top keys: " + (sum.topKeys || []).join(", "), "dim");
-        log("peers " + sum.peerCount + "  exits " + sum.exitCount, "ok");
-        (sum.peers || []).forEach((p, i) => {
+        log("Connect netmap does not include exit-node flags (upstream limit).", "dim");
+        log("peers " + sum.peerCount + " — pick one that is your exit node:", "ok");
+        const st = T.status();
+        const raw = (T.getNetMap && T.getNetMap()) || {};
+        const peers = raw.peers || raw.Peers || [];
+        peers.forEach((p, i) => {
+          const name = p.name || p.Name || "?";
+          const online = p.online ?? p.Online;
+          const key = p.nodeKey || p.NodeKey || "";
+          const addrs = (p.addresses || p.Addresses || []).join(" ");
           log(
-            "  [" +
-              i +
-              "] " +
-              (p.isExit ? "EXIT " : "     ") +
-              (p.name || "?") +
-              "  online=" +
-              p.online +
-              "  key=" +
-              (p.nodeKeyPrefix || "none") +
-              "  fields=" +
-              (p.fields || []).slice(0, 10).join(","),
-            p.isExit ? "ok" : "dim"
+            "  [" + i + "] " + name +
+              (online === false ? " offline" : online ? " online" : "") +
+              (addrs ? "  " + addrs : ""),
+            "dim"
           );
-          if (p.allowedIPs && p.allowedIPs.length)
-            log("       routes " + p.allowedIPs.join(" "), "dim");
+          if (key) log("       nodeKey " + key, "dim");
         });
-        if (!sum.peerCount) log("empty peer list — Connect may omit peers until stable", "w");
+        if (!peers.length) log("no peers in map", "w");
+        log("then: ts use <index>   e.g. ts use 0", "ok");
         return;
       }
-      log("ts login | status | logout | wisp <url>", "dim");
+      if (sub.startsWith("use ")) {
+        const n = parseInt(sub.slice(4).trim(), 10);
+        const raw = (T.getNetMap && T.getNetMap()) || {};
+        const peers = raw.peers || raw.Peers || [];
+        if (!Number.isFinite(n) || n < 0 || n >= peers.length) {
+          log("usage: ts use <index>  (see ts peers)", "e");
+          return;
+        }
+        const p = peers[n];
+        const key = p.nodeKey || p.NodeKey;
+        const name = p.name || p.Name || "#" + n;
+        if (!key) {
+          log("peer has no nodeKey", "e");
+          return;
+        }
+        log("using peer [" + n + "] " + name, "ok");
+        // Store selection for status
+        try {
+          localStorage.setItem("ffwasm.ts.exitPeer", JSON.stringify({ index: n, name, nodeKey: key }));
+        } catch (_) {}
+        if (window.UserNet?.setExitPeerKey) {
+          // nodeKey from Connect is often "nodekey:..." or base64
+          let hexOrB64 = key;
+          if (key.startsWith("nodekey:")) hexOrB64 = key.slice(8);
+          // Prefer b64 path via FFTailscale.b64ToBytes inside setExitPeerKey flow
+          const bytes = T.b64ToBytes(hexOrB64);
+          if (bytes && bytes.length >= 32) {
+            const hex = [...bytes.subarray(0, 32)].map((b) => b.toString(16).padStart(2, "0")).join("");
+            window.UserNet.setExitPeerKey(hex).then((s) => {
+              log("UserNet armed for " + name, "ok");
+              log("wg=" + !!s.wgReady + " derp=" + !!s.derp, "dim");
+            });
+          } else {
+            // try as hex
+            window.UserNet.setExitPeerKey(hexOrB64.replace(/[^0-9a-fA-F]/g, "")).then((s) => {
+              log("UserNet armed (hex) for " + name, "ok");
+            }).catch((e) => log(String(e.message || e), "e"));
+          }
+        } else {
+          log("UserNet missing", "e");
+        }
+        return;
+      }
+      log("ts login | status | peers | use <n> | logout", "dim");
       return;
     }
 

@@ -68,9 +68,17 @@ window.FFTailscale = (function () {
 
   function b64ToBytes(b64) {
     if (!b64) return null;
+    let s = String(b64).trim();
+    if (s.startsWith("nodekey:")) s = s.slice(8);
+    if (s.startsWith("mkey:")) s = s.slice(5);
+    // hex (64 chars for 32 bytes)
+    if (/^[0-9a-fA-F]{64}$/.test(s)) {
+      const out = new Uint8Array(32);
+      for (let i = 0; i < 32; i++) out[i] = parseInt(s.substr(i * 2, 2), 16);
+      return out;
+    }
     try {
-      // Tailscale sometimes uses raw std or URL-safe base64
-      let s = String(b64).replace(/-/g, "+").replace(/_/g, "/");
+      s = s.replace(/-/g, "+").replace(/_/g, "/");
       while (s.length % 4) s += "=";
       const bin = atob(s);
       const out = new Uint8Array(bin.length);
