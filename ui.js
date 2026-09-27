@@ -160,7 +160,7 @@
         return;
       }
       if (sub === "online" || sub === "internet") {
-        log("arming DERP/WG path…", "dim");
+        log("seamless: login + auto exit node…", "dim");
         U.enableInternetPath().then((s) => log(JSON.stringify(s), "ok"));
         return;
       }

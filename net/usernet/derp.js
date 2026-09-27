@@ -1,30 +1,22 @@
 /**
- * Step 5: DERP client — Tailscale's relay protocol over WebSocket/HTTPS.
- * Spec: https://github.com/tailscale/tailscale/tree/main/derp
- *
- * Frame layout (simplified v1-style):
- *   [type u8][length u32 BE][payload…]
- *
- * Public default map: https://controlplane.tailscale.com/derpmap/default
- * This client can connect, read server key frames, and send/recv packet frames
- * once keys/peers are supplied by the control layer.
+ * DERP client with proper ServerKey → ClientInfo login (nacl box).
  */
 (function () {
-  // Common frame types (from Tailscale derp package)
   const Frame = {
-    ServerKey: 1,
-    ClientInfo: 2,
-    ServerInfo: 3,
-    SendPacket: 4,
-    RecvPacket: 5,
-    KeepAlive: 6,
-    NotePreferred: 7,
-    PeerGone: 8,
-    PeerPresent: 9,
-    WatchConnectionChanges: 10,
-    ClosePeer: 11,
-    ServerRestarting: 12,
+    ServerKey: 0x01,
+    ClientInfo: 0x02,
+    ServerInfo: 0x03,
+    SendPacket: 0x04,
+    RecvPacket: 0x05,
+    KeepAlive: 0x06,
+    NotePreferred: 0x07,
+    PeerGone: 0x08,
+    PeerPresent: 0x09,
+    Ping: 0x0a,
+    Pong: 0x0b,
   };
+
+  const MAGIC = new TextEncoder().encode("DERP🔑");
 
   function log(...a) {
     console.log("[usernet:derp]", ...a);
@@ -34,8 +26,7 @@
     const p = payload ? new Uint8Array(payload) : new Uint8Array(0);
     const out = new Uint8Array(5 + p.length);
     out[0] = type;
-    const dv = new DataView(out.buffer);
-    dv.setUint32(1, p.length, false); // BE
+    new DataView(out.buffer).setUint32(1, p.length, false);
     out.set(p, 5);
     return out;
   }
@@ -43,23 +34,31 @@
   function parseFrames(buf, onFrame) {
     let u8 = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
     while (u8.length >= 5) {
-      const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
-      const type = u8[0];
-      const len = dv.getUint32(1, false);
+      const len = new DataView(u8.buffer, u8.byteOffset, u8.byteLength).getUint32(1, false);
       if (u8.length < 5 + len) break;
-      const payload = u8.subarray(5, 5 + len);
-      onFrame(type, payload);
+      onFrame(u8[0], u8.subarray(5, 5 + len));
       u8 = u8.subarray(5 + len);
     }
-    return u8; // remainder
+    return u8;
+  }
+
+  let naclPromise = null;
+  function loadNacl() {
+    if (naclPromise) return naclPromise;
+    naclPromise = import("https://cdn.jsdelivr.net/npm/tweetnacl@1.0.3/+esm").then((m) => {
+      return m.default || m.nacl || m;
+    });
+    return naclPromise;
   }
 
   class DerpClient {
-    constructor(url) {
+    constructor(url, keyPair) {
       this.url = url;
+      this.keyPair = keyPair; // { publicKey: Uint8Array(32), privateKey: Uint8Array(32) } nacl box keys
       this.ws = null;
-      this.serverKey = null;
-      this.handlers = { packet: new Set(), open: new Set(), close: new Set() };
+      this.serverKey = null; // 32 bytes
+      this.loggedIn = false;
+      this.handlers = { packet: new Set(), open: new Set(), close: new Set(), info: new Set() };
       this._remain = new Uint8Array(0);
     }
 
@@ -69,40 +68,77 @@
     }
 
     async connect() {
+      const nacl = await loadNacl();
+      if (!this.keyPair) {
+        this.keyPair = nacl.box.keyPair();
+      }
       log("connect", this.url);
       const ws = new WebSocket(this.url);
       ws.binaryType = "arraybuffer";
       this.ws = ws;
       await new Promise((res, rej) => {
         ws.onopen = () => res();
-        ws.onerror = (e) => rej(e);
+        ws.onerror = (e) => rej(new Error("DERP ws error"));
+        setTimeout(() => rej(new Error("DERP connect timeout")), 15000);
       });
       ws.onmessage = (ev) => {
         const chunk = new Uint8Array(ev.data);
         const merged = new Uint8Array(this._remain.length + chunk.length);
         merged.set(this._remain);
         merged.set(chunk, this._remain.length);
-        this._remain = parseFrames(merged, (type, payload) => this._onFrame(type, payload));
+        this._remain = parseFrames(merged, (type, payload) => this._onFrame(nacl, type, payload));
       };
       ws.onclose = () => {
+        this.loggedIn = false;
         for (const h of this.handlers.close) h();
       };
       for (const h of this.handlers.open) h();
-      log("ws open");
     }
 
-    _onFrame(type, payload) {
+    async _onFrame(nacl, type, payload) {
       if (type === Frame.ServerKey) {
-        this.serverKey = payload;
-        log("ServerKey", payload.length, "bytes");
-      } else if (type === Frame.RecvPacket) {
-        // payload: [32-byte src key][packet…]
-        for (const h of this.handlers.packet) h(payload);
-      } else if (type === Frame.KeepAlive) {
-        this.sendFrame(Frame.KeepAlive, null);
-      } else {
-        log("frame", type, payload.length);
+        // magic(8) + server public key(32)
+        if (payload.length >= 40) {
+          this.serverKey = payload.subarray(8, 40);
+        } else if (payload.length >= 32) {
+          this.serverKey = payload.subarray(payload.length - 32);
+        }
+        log("ServerKey ok");
+        await this._sendClientInfo(nacl);
+        return;
       }
+      if (type === Frame.ServerInfo) {
+        this.loggedIn = true;
+        log("DERP logged in");
+        for (const h of this.handlers.info) h(payload);
+        return;
+      }
+      if (type === Frame.RecvPacket) {
+        for (const h of this.handlers.packet) h(payload);
+        return;
+      }
+      if (type === Frame.KeepAlive) {
+        this.sendFrame(Frame.KeepAlive, null);
+        return;
+      }
+      if (type === Frame.Ping) {
+        this.sendFrame(Frame.Pong, payload);
+      }
+    }
+
+    async _sendClientInfo(nacl) {
+      if (!this.serverKey || !this.keyPair) return;
+      const info = new TextEncoder().encode(JSON.stringify({ version: 2 }));
+      const nonce = nacl.randomBytes(24);
+      // nacl.box(msg, nonce, theirPub, mySecret)
+      const boxed = nacl.box(info, nonce, this.serverKey, this.keyPair.secretKey || this.keyPair.privateKey);
+      const pub = this.keyPair.publicKey;
+      const payload = new Uint8Array(32 + 24 + boxed.length);
+      payload.set(pub, 0);
+      payload.set(nonce, 32);
+      payload.set(boxed, 56);
+      this.sendFrame(Frame.ClientInfo, payload);
+      log("ClientInfo sent");
     }
 
     sendFrame(type, payload) {
@@ -110,8 +146,10 @@
       this.ws.send(encodeFrame(type, payload));
     }
 
-    /** Send packet to 32-byte public key destination */
     sendPacket(dstKey32, packet) {
+      if (!this.loggedIn) {
+        log("sendPacket before login");
+      }
       const p = new Uint8Array(32 + packet.length);
       p.set(dstKey32, 0);
       p.set(packet, 32);
@@ -126,11 +164,10 @@
   }
 
   async function fetchDefaultDerpMap() {
-    const urls = [
+    for (const u of [
       "https://controlplane.tailscale.com/derpmap/default",
       "https://login.tailscale.com/derpmap/default",
-    ];
-    for (const u of urls) {
+    ]) {
       try {
         const r = await fetch(u, { mode: "cors" });
         if (r.ok) return await r.json();
@@ -140,13 +177,16 @@
   }
 
   function pickDerpWsUrl(map) {
-    if (!map?.Regions) return "wss://derp.tailscale.com/derp";
-    const regions = Object.values(map.Regions);
-    const r = regions[0];
-    const node = r?.Nodes?.[0];
-    if (!node) return "wss://derp.tailscale.com/derp";
-    const host = node.HostName || node.IPv4;
-    return `wss://${host}/derp`;
+    try {
+      const regions = Object.values(map?.Regions || map?.regions || {});
+      for (const r of regions) {
+        for (const node of r.Nodes || r.nodes || []) {
+          const host = node.HostName || node.hostname || node.IPv4;
+          if (host) return `wss://${host}/derp`;
+        }
+      }
+    } catch (_) {}
+    return "wss://derp.tailscale.com/derp";
   }
 
   window.UserNetDerp = {
@@ -154,6 +194,6 @@
     DerpClient,
     fetchDefaultDerpMap,
     pickDerpWsUrl,
-    encodeFrame,
+    loadNacl,
   };
 })();

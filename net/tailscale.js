@@ -1,13 +1,6 @@
 /**
- * Tailscale for Firefox-WASM via @tailscale/connect (Go IPN in WASM).
- *
- * Gecko networking still speaks Wisp (WebSocket). After you join a tailnet:
- *   - HTTP to tailnet hosts works through IPN.fetch (for probes/tools)
- *   - Full browser TCP needs a Wisp server; set Module.wispUrl / "set wisp …"
- *     ideally on a machine in the same tailnet (or public Wisp)
- *
- * CLI: ts login | logout | status | wisp <url>
- * URL hash: #authKey=tskey-…&controlUrl=https://…
+ * Tailscale control plane via @tailscale/connect (createIPN).
+ * Keeps full netmap, detects exit nodes, notifies UserNet for seamless path.
  */
 window.FFTailscale = (function () {
   const CDN = "https://cdn.jsdelivr.net/npm/@tailscale/connect@1.102.3-3-tb31d8a75a-g5e651e16f";
@@ -20,6 +13,7 @@ window.FFTailscale = (function () {
   let netMap = null;
   let loginUrl = null;
   let loadPromise = null;
+  let exitPeer = null; // { name, addresses, nodeKey, machineKey, raw }
   const listeners = new Set();
 
   function log(msg) {
@@ -33,6 +27,14 @@ window.FFTailscale = (function () {
         fn(snap);
       } catch (_) {}
     });
+    // Seamless: when Running + exit node, arm UserNet
+    if (state === "Running" && exitPeer && window.UserNet?.onTailscaleReady) {
+      try {
+        window.UserNet.onTailscaleReady(snap);
+      } catch (e) {
+        log("UserNet hook " + e);
+      }
+    }
   }
 
   function onChange(fn) {
@@ -64,14 +66,55 @@ window.FFTailscale = (function () {
     },
   };
 
+  function b64ToBytes(b64) {
+    if (!b64) return null;
+    try {
+      // Tailscale sometimes uses raw std or URL-safe base64
+      let s = String(b64).replace(/-/g, "+").replace(/_/g, "/");
+      while (s.length % 4) s += "=";
+      const bin = atob(s);
+      const out = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+      return out;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function pickExitPeer(map) {
+    if (!map?.peers?.length) return null;
+    for (const p of map.peers) {
+      if (p.exitNode || p.ExitNode || p.allowedIPs?.includes?.("0.0.0.0/0")) {
+        return {
+          name: p.name || p.Name || p.Hostinfo?.Hostname,
+          addresses: p.addresses || p.Addresses || [],
+          nodeKey: p.nodeKey || p.NodeKey || p.node_key,
+          machineKey: p.machineKey || p.MachineKey,
+          online: p.online ?? p.Online,
+          raw: p,
+        };
+      }
+    }
+    // Fallback: first online peer (better than nothing for private net)
+    const online = map.peers.find((p) => p.online || p.Online);
+    return online
+      ? {
+          name: online.name || online.Name,
+          addresses: online.addresses || online.Addresses || [],
+          nodeKey: online.nodeKey || online.NodeKey,
+          machineKey: online.machineKey || online.MachineKey,
+          online: true,
+          raw: online,
+          notExit: true,
+        }
+      : null;
+  }
+
   async function loadSdk() {
     if (loadPromise) return loadPromise;
     loadPromise = (async () => {
-      // pkg.js is ESM exporting createIPN
       const mod = await import(PKG_URL);
-      if (typeof mod.createIPN !== "function") {
-        throw new Error("createIPN missing from @tailscale/connect");
-      }
+      if (typeof mod.createIPN !== "function") throw new Error("createIPN missing");
       return mod;
     })();
     return loadPromise;
@@ -81,7 +124,7 @@ window.FFTailscale = (function () {
     if (ipn) return ipn;
     state = "loading";
     emit();
-    log("loading Tailscale WASM (~25MB first time)…");
+    log("loading Tailscale WASM…");
     const mod = await loadSdk();
     const hashCfg = parseHashConfig();
     const cfg = {
@@ -101,22 +144,28 @@ window.FFTailscale = (function () {
       notifyState(s) {
         state = s;
         log("state " + s);
-        if (s === "Running") {
-          log("tailnet up — for full internet set a remote Wisp: net wisp wss://host:port/");
-        }
-        if (s === "NeedsLogin") {
-          // loginUrl comes via notifyBrowseToURL
-        }
         emit();
       },
       notifyNetMap(netMapStr) {
         try {
           netMap = typeof netMapStr === "string" ? JSON.parse(netMapStr) : netMapStr;
-          const addrs = netMap?.self?.addresses || [];
+          const addrs = netMap?.self?.addresses || netMap?.Self?.Addresses || [];
           lastIp = addrs[0] || lastIp;
-          log("netmap self=" + (netMap?.self?.name || "?") + " ip=" + (lastIp || "?"));
+          exitPeer = pickExitPeer(netMap);
+          if (exitPeer) {
+            log(
+              "exit/peer " +
+                (exitPeer.name || "?") +
+                (exitPeer.notExit ? " (not exit)" : " (exit node)") +
+                " key=" +
+                String(exitPeer.nodeKey || "").slice(0, 12) +
+                "…"
+            );
+          } else {
+            log("netmap: no exit node peer yet");
+          }
         } catch (e) {
-          log("netmap parse error " + e);
+          log("netmap parse " + e);
         }
         emit();
       },
@@ -139,13 +188,12 @@ window.FFTailscale = (function () {
     try {
       const node = await ensureIpn(opts);
       if (state === "Running") {
-        return { ok: true, state, ip: lastIp, message: "already running" };
+        return { ok: true, state, ip: lastIp, exitPeer, message: "already running" };
       }
-      // Auth key path: createIPN already has key; may auto-start
       if (opts.authKey || parseHashConfig().authKey) {
         state = "Starting";
         emit();
-        return { ok: true, state, message: "auth key supplied — waiting for Running" };
+        return { ok: true, state, message: "auth key — waiting for Running" };
       }
       node.login();
       state = "NeedsLogin";
@@ -154,7 +202,7 @@ window.FFTailscale = (function () {
         ok: true,
         state,
         loginUrl,
-        message: "complete login in the opened tab, then return here",
+        message: "complete login in the opened tab",
       };
     } catch (e) {
       state = "error";
@@ -171,6 +219,7 @@ window.FFTailscale = (function () {
     state = "idle";
     lastIp = null;
     netMap = null;
+    exitPeer = null;
     loginUrl = null;
     emit();
     return { ok: true };
@@ -181,8 +230,11 @@ window.FFTailscale = (function () {
       state,
       ip: lastIp,
       loginUrl,
-      peers: netMap?.peers?.length ?? 0,
-      self: netMap?.self?.name || null,
+      peers: netMap?.peers?.length ?? netMap?.Peers?.length ?? 0,
+      self: netMap?.self?.name || netMap?.Self?.Name || null,
+      exitPeer,
+      exitNodeKeyBytes: exitPeer?.nodeKey ? b64ToBytes(exitPeer.nodeKey) : null,
+      netMap,
       wisp: document.getElementById("opt-wisp")?.value || "",
     };
   }
@@ -193,7 +245,6 @@ window.FFTailscale = (function () {
     try {
       if (window.Module) window.Module.wispUrl = url || "";
     } catch (_) {}
-    // Persist for chrome-demo opts
     try {
       const o = JSON.parse(localStorage.getItem("chrome-demo-opts") || "{}");
       o.wisp = url || "";
@@ -203,15 +254,11 @@ window.FFTailscale = (function () {
     emit();
   }
 
-  /** HTTP via Tailscale userspace (works once Running). */
   async function fetchViaTs(url) {
-    if (!ipn || state !== "Running") {
-      throw new Error("Tailscale not Running");
-    }
+    if (!ipn || state !== "Running") throw new Error("Tailscale not Running");
     return ipn.fetch(url);
   }
 
-  // Auto-start if authKey in hash
   const boot = parseHashConfig();
   if (boot.authKey) {
     login({ authKey: boot.authKey, controlURL: boot.controlURL }).then((r) =>
@@ -227,5 +274,6 @@ window.FFTailscale = (function () {
     fetchViaTs,
     onChange,
     ensureIpn,
+    b64ToBytes,
   };
 })();
