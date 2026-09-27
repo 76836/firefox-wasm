@@ -1,6 +1,6 @@
 window.FF_VERSION = {
-  commit: "1d35c97173ccb0c12c1aa2459f563b2c852db8c1",
-  short: "1d35c97",
+  commit: "d4abd99fa8ea5e657a354407d86bfdd5c5523a6f",
+  short: "d4abd99",
   date: "2026-09-27",
-  label: "1d35c97 (2026-09-27)",
+  label: "d4abd99 (2026-09-27)",
 };
