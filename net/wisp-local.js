@@ -66,6 +66,19 @@
   }
 
   async function dialTcp(host, port) {
+    // 0) UserNet (tcpip.js userspace stack — steps 2–3)
+    try {
+      if (window.UserNet?.dial) {
+        const c = await window.UserNet.dial(host, port);
+        if (c?.readable && c?.writable) {
+          log("dial UserNet", host, port);
+          return c;
+        }
+      }
+    } catch (e) {
+      log("UserNet dial fail", host, port, e.message || e);
+    }
+
     // 1) Direct Sockets API (Chrome IWA / experimental)
     try {
       const TCPSocket = globalThis.TCPSocket || globalThis.TCPSocket;

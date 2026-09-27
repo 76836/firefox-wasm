@@ -146,6 +146,27 @@
     }
     if (c === "launch" || c === "start" || c === "run") return doLaunch();
 
+
+    if (c === "usernet" || c.startsWith("usernet ")) {
+      const sub = c === "usernet" ? "status" : c.slice(8).trim();
+      const U = window.UserNet;
+      if (!U) { log("UserNet missing", "e"); return; }
+      if (sub === "status" || sub === "") {
+        log(JSON.stringify(U.status()), "dim");
+        return;
+      }
+      if (sub === "start") {
+        U.start().then((s) => log(JSON.stringify(s), "ok"));
+        return;
+      }
+      if (sub === "online" || sub === "internet") {
+        log("arming DERP/WG path…", "dim");
+        U.enableInternetPath().then((s) => log(JSON.stringify(s), "ok"));
+        return;
+      }
+      log("usernet status|start|online", "dim");
+      return;
+    }
     if (c === "net" || c.startsWith("net ")) {
       const sub = c === "net" ? "status" : c.slice(4).trim();
       const N = window.NetStack;
