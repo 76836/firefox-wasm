@@ -125,6 +125,7 @@
       log("  version          show build commit", "dim");
       log("  login | ts login open Tailscale login (use an exit node on your tailnet)", "dim");
       log("  ts status        Tailscale + exit node state", "dim");
+      log("  ts peers         list netmap peers / exit flags", "dim");
       log("  online           login + auto-arm exit node path", "dim");
       log("  status           short network / stack summary", "dim");
       log("  launch           start Firefox", "dim");
@@ -241,6 +242,31 @@
       if (sub.startsWith("wisp ")) {
         T.applyWisp(sub.slice(5).trim());
         log("wisp set", "ok");
+        return;
+      }
+      if (sub === "peers" || sub === "netmap") {
+        const sum = T.summarizeNetMap?.() || { peers: [], peerCount: 0, exitCount: 0, topKeys: [] };
+        log("netmap top keys: " + (sum.topKeys || []).join(", "), "dim");
+        log("peers " + sum.peerCount + "  exits " + sum.exitCount, "ok");
+        (sum.peers || []).forEach((p, i) => {
+          log(
+            "  [" +
+              i +
+              "] " +
+              (p.isExit ? "EXIT " : "     ") +
+              (p.name || "?") +
+              "  online=" +
+              p.online +
+              "  key=" +
+              (p.nodeKeyPrefix || "none") +
+              "  fields=" +
+              (p.fields || []).slice(0, 10).join(","),
+            p.isExit ? "ok" : "dim"
+          );
+          if (p.allowedIPs && p.allowedIPs.length)
+            log("       routes " + p.allowedIPs.join(" "), "dim");
+        });
+        if (!sum.peerCount) log("empty peer list — Connect may omit peers until stable", "w");
         return;
       }
       log("ts login | status | logout | wisp <url>", "dim");

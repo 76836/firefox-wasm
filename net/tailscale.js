@@ -81,43 +81,110 @@ window.FFTailscale = (function () {
     }
   }
 
+
+  function asPeerList(map) {
+    if (!map || typeof map !== "object") return [];
+    let peers = map.peers || map.Peers || map.peer || map.Peer || [];
+    if (peers && typeof peers === "object" && !Array.isArray(peers)) {
+      peers = Object.values(peers);
+    }
+    if (!Array.isArray(peers)) peers = [];
+    // Some maps nest under NetworkMap / netMap
+    if (!peers.length && map.NetworkMap) return asPeerList(map.NetworkMap);
+    if (!peers.length && map.netMap) return asPeerList(map.netMap);
+    return peers;
+  }
+
+  function peerFields(p) {
+    if (!p || typeof p !== "object") return null;
+    const name =
+      p.name ||
+      p.Name ||
+      p.DNSName ||
+      p.dnsName ||
+      p.Hostinfo?.Hostname ||
+      p.hostinfo?.Hostname ||
+      p.ComputedName ||
+      p.computedName ||
+      null;
+    const addresses =
+      p.addresses ||
+      p.Addresses ||
+      p.Addresses ||
+      p.TailscaleIPs ||
+      p.tailscaleIPs ||
+      p.Addresses ||
+      [];
+    const nodeKey =
+      p.nodeKey ||
+      p.NodeKey ||
+      p.node_key ||
+      p.Key ||
+      p.key ||
+      p.PublicKey ||
+      p.publicKey ||
+      null;
+    const machineKey = p.machineKey || p.MachineKey || p.machine_key || null;
+    const online = p.online ?? p.Online;
+    const allowed =
+      p.allowedIPs ||
+      p.AllowedIPs ||
+      p.allowed_ips ||
+      p.PrimaryRoutes ||
+      p.primaryRoutes ||
+      p.Hostinfo?.RoutableIPs ||
+      p.hostinfo?.RoutableIPs ||
+      [];
+    const allowedList = Array.isArray(allowed) ? allowed.map(String) : [];
+    const caps = p.CapMap || p.capMap || p.Capabilities || p.capabilities || {};
+    const isExit =
+      !!(p.exitNode || p.ExitNode || p.exit_node || p.IsExitNode || p.isExitNode) ||
+      allowedList.some((c) => c === "0.0.0.0/0" || c === "::/0") ||
+      !!(caps["exit-node"] || caps["https://tailscale.com/cap/exit-node"]);
+    return {
+      name: name || "(unnamed)",
+      addresses: Array.isArray(addresses) ? addresses : [],
+      nodeKey,
+      machineKey,
+      online,
+      isExit,
+      allowedIPs: allowedList,
+      fieldNames: Object.keys(p),
+      raw: p,
+    };
+  }
+
   function pickExitPeer(map) {
-    if (!map) return null;
-    const peers = map.peers || map.Peers || [];
-    if (!peers.length) return null;
-
-    function norm(p) {
-      const name =
-        p.name || p.Name || p.Hostinfo?.Hostname || p.hostinfo?.Hostname || p.DNSName || p.dnsName;
-      const addresses = p.addresses || p.Addresses || p.TailscaleIPs || p.tailscaleIPs || [];
-      const nodeKey =
-        p.nodeKey || p.NodeKey || p.node_key || p.PublicKey || p.publicKey || p.Key || p.key;
-      const machineKey = p.machineKey || p.MachineKey || p.machine_key;
-      const online = p.online ?? p.Online;
-      const allowed =
-        p.allowedIPs || p.AllowedIPs || p.allowed_ips || p.PrimaryRoutes || p.primaryRoutes || [];
-      const isExit =
-        !!(p.exitNode || p.ExitNode || p.exit_node) ||
-        (Array.isArray(allowed) &&
-          allowed.some((c) => String(c) === "0.0.0.0/0" || String(c) === "::/0"));
-      return { name, addresses, nodeKey, machineKey, online, raw: p, isExit };
+    const list = asPeerList(map).map(peerFields).filter(Boolean);
+    const exits = list.filter((p) => p.isExit);
+    if (exits.length) {
+      // Prefer online exit if marked
+      const online = exits.find((p) => p.online !== false);
+      return online || exits[0];
     }
-
-    const normalized = peers.map(norm);
-    const exit = normalized.find((p) => p.isExit);
-    if (exit) {
-      return {
-        name: exit.name,
-        addresses: exit.addresses,
-        nodeKey: exit.nodeKey,
-        machineKey: exit.machineKey,
-        online: exit.online,
-        raw: exit.raw,
-      };
-    }
-    // Do not guess a random peer as exit — that misleads routing
     return null;
   }
+
+  function summarizeNetMap(map) {
+    const list = asPeerList(map).map(peerFields).filter(Boolean);
+    const topKeys = map && typeof map === "object" ? Object.keys(map) : [];
+    return {
+      topKeys,
+      peerCount: list.length,
+      exitCount: list.filter((p) => p.isExit).length,
+      peers: list.map((p) => ({
+        name: p.name,
+        online: p.online,
+        isExit: p.isExit,
+        addresses: p.addresses,
+        hasNodeKey: !!p.nodeKey,
+        nodeKeyPrefix: p.nodeKey ? String(p.nodeKey).slice(0, 12) + "…" : null,
+        fields: p.fieldNames,
+        allowedIPs: p.allowedIPs.slice(0, 8),
+      })),
+    };
+  }
+
 
   async function loadSdk() {
     if (loadPromise) return loadPromise;
@@ -157,21 +224,42 @@ window.FFTailscale = (function () {
       },
       notifyNetMap(netMapStr) {
         try {
-          netMap = typeof netMapStr === "string" ? JSON.parse(netMapStr) : netMapStr;
-          const addrs = netMap?.self?.addresses || netMap?.Self?.Addresses || [];
-          lastIp = addrs[0] || lastIp;
+          let parsed = typeof netMapStr === "string" ? JSON.parse(netMapStr) : netMapStr;
+          // Some builds wrap the map
+          if (parsed && parsed.NetworkMap && !parsed.peers && !parsed.Peers) {
+            parsed = parsed.NetworkMap;
+          }
+          netMap = parsed;
+          const self =
+            netMap?.self || netMap?.Self || netMap?.SelfNode || netMap?.selfNode || {};
+          const addrs =
+            self.addresses || self.Addresses || self.Addresses || self.TailscaleIPs || [];
+          lastIp = (Array.isArray(addrs) && addrs[0]) || lastIp;
           exitPeer = pickExitPeer(netMap);
+          const sum = summarizeNetMap(netMap);
+          log(
+            "netmap peers=" +
+              sum.peerCount +
+              " exits=" +
+              sum.exitCount +
+              " keys=[" +
+              sum.topKeys.slice(0, 12).join(",") +
+              "]"
+          );
           if (exitPeer) {
             log(
-              "exit/peer " +
+              "exit node " +
                 (exitPeer.name || "?") +
-                (exitPeer.notExit ? " (not exit)" : " (exit node)") +
                 " key=" +
                 String(exitPeer.nodeKey || "").slice(0, 12) +
                 "…"
             );
+          } else if (sum.peerCount === 0) {
+            log("netmap has no peers yet (waiting for full map)");
           } else {
-            log("netmap: no exit node peer yet");
+            log(
+              "no exit-flagged peer — run: ts peers  (allowedIPs/exit may be missing from Connect map)"
+            );
           }
         } catch (e) {
           log("netmap parse " + e);
@@ -235,15 +323,26 @@ window.FFTailscale = (function () {
   }
 
   function status() {
+    const sum = netMap ? summarizeNetMap(netMap) : { peerCount: 0, exitCount: 0, peers: [], topKeys: [] };
     return {
       state,
       ip: lastIp,
       loginUrl,
-      peers: netMap?.peers?.length ?? netMap?.Peers?.length ?? 0,
-      self: netMap?.self?.name || netMap?.Self?.Name || null,
-      exitPeer,
+      peers: sum.peerCount,
+      exits: sum.exitCount,
+      self: netMap?.self?.name || netMap?.Self?.Name || netMap?.SelfNode?.Name || null,
+      exitPeer: exitPeer
+        ? {
+            name: exitPeer.name,
+            addresses: exitPeer.addresses,
+            nodeKey: exitPeer.nodeKey,
+            online: exitPeer.online,
+            isExit: exitPeer.isExit !== false,
+          }
+        : null,
       exitNodeKeyBytes: exitPeer?.nodeKey ? b64ToBytes(exitPeer.nodeKey) : null,
-      netMap,
+      peerList: sum.peers,
+      netMapKeys: sum.topKeys,
       wisp: document.getElementById("opt-wisp")?.value || "",
     };
   }
@@ -284,5 +383,7 @@ window.FFTailscale = (function () {
     onChange,
     ensureIpn,
     b64ToBytes,
+    summarizeNetMap: () => (netMap ? summarizeNetMap(netMap) : null),
+    getNetMap: () => netMap,
   };
 })();
