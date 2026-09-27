@@ -1,28 +1,19 @@
-# UserNet — steps 2–6
+# UserNet
 
 | Step | Module | Status |
 |------|--------|--------|
-| 2 TCP/IP | `tcpip.js` → tcpip.js (lwIP WASM) | **Working** |
-| 3 TUN | same, `createTunInterface` | **Working** |
-| 4 WireGuard | `wireguard.js` | **Stub** (keys; Noise_IK TODO) |
-| 5 DERP | `derp.js` | **Connect + frames** (auth/peer TODO) |
-| 6 Control | `control.js` → FFTailscale Connect | **Login/netmap** |
+| 1 Socket | `socket.js` | **Done** — DoH + `connect()` |
+| 2 TCP/IP | `tcpip.js` | **Done** — tcpip.js/lwIP |
+| 3 TUN | `tcpip.js` | **Done** |
+| 4 WireGuard | `wireguard.js` | **Crypto path** — X25519, ChaCha20-Poly1305, BLAKE2s, initiation msg |
+| 5 DERP | `derp.js` | Connect + SendPacket |
+| 6 Control | `control.js` | Tailscale Connect login |
 
-## CLI
+## Exit node (your phone)
 
-```
-usernet start     # load tcpip + TUN
-usernet online    # login + DERP + WG stub
-usernet status
-```
+1. `ts login` / `usernet online`
+2. On phone: Tailscale admin → machine → **WireGuard public key** (or `tailscale status --json`)
+3. `usernet peer <64-char-hex-public-key>`
+4. Ensure phone is advertised as **exit node** and approved
 
-Local Wisp dials via `UserNet.dial` first.
-
-## What’s left for public internet
-
-1. Noise_IK handshake interoperable with Tailscale peers  
-2. Map netmap peer keys → WG sessions  
-3. Prefer exit node peer for default route  
-4. DERP ClientInfo with real node key after control plane auth  
-
-Until then: architecture is live; egress IP packets are logged but not yet accepted by the tailnet.
+Handshake response from the phone over DERP is required before `wgReady: true`.

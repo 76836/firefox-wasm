@@ -1,13 +1,7 @@
 /**
- * UserNet — steps 2–6 orchestrator for Firefox-WASM.
- *
- * dial(host, port) → duplex streams for local Wisp server.
- *
- * Pipeline:
- *   dial → tcpip.connectTcp → (IP on TUN) → WG → DERP → peers/exit
- *
- * Until WG Noise_IK is complete, dial uses tcpip only (works for stack-local
- * targets). enableInternetPath() connects DERP + hooks TUN pump.
+ * UserNet orchestrator — steps 1–6
+ * dial() uses socket (1) → tcpip (2). TUN → WG (4) → DERP (5).
+ * Control (6) supplies exit-node peer key when available.
  */
 (function () {
   function log(...a) {
@@ -17,88 +11,111 @@
   let derp = null;
   let wg = null;
   let started = false;
-  let internetPath = false;
+  let kp = null;
 
   async function start() {
     if (started) return status();
     started = true;
     await window.UserNetTcpip.ensure();
-    // TUN → (future WG)
+    await window.UserNetWG.loadCrypto().catch((e) => log("wg crypto", e.message || e));
+
     window.UserNetTcpip.onIpPacket(async (pkt) => {
       if (wg) await wg.sendIpPacket(pkt);
     });
-    log("tcpip layer up");
+    log("layers 1–2 ready (socket+tcpip)");
     return status();
   }
 
-  async function enableInternetPath() {
+  /**
+   * peerPublicKey: Uint8Array(32) from netmap exit node when known
+   */
+  async function enableInternetPath(peerPublicKey) {
     await start();
-    // Control plane
     try {
       await window.UserNetControl.login();
     } catch (e) {
-      log("control login", e.message || e);
+      log("control", e.message || e);
     }
 
-    // DERP
+    kp = await window.UserNetWG.generateKeyPair();
+
     const map = await window.UserNetDerp.fetchDefaultDerpMap();
     const url = window.UserNetDerp.pickDerpWsUrl(map);
     derp = new window.UserNetDerp.DerpClient(url);
     try {
       await derp.connect();
-      log("DERP connected", url);
+      log("DERP up", url);
     } catch (e) {
-      log("DERP failed", e.message || e, "— continue without relay");
+      log("DERP", e.message || e);
     }
 
-    // WG session (stub keys until Noise_IK)
-    const kp = await window.UserNetWG.generateKeyPair();
+    let peerKey = peerPublicKey;
+    if (typeof peerKey === "string" && peerKey.length >= 64) {
+      peerKey = hexToBytes(peerKey);
+    }
+
     wg = new window.UserNetWG.WireGuardSession({
-      ...kp,
-      peerPublicKey: null,
-      sendRaw: (pkt) => {
-        // Without peer key, cannot SendPacket yet
-        log("egress IP packet", pkt.length, "bytes (needs peer + WG)");
+      privateKey: kp.privateKey,
+      publicKey: kp.publicKey,
+      peerPublicKey: peerKey || null,
+      sendOuter: (msg) => {
+        if (!derp || !peerKey) {
+          log("outer send", msg.length, "b (need DERP+peer)");
+          return;
+        }
+        derp.sendPacket(peerKey, msg);
       },
     });
+    wg.onIpPacket((ip) => window.UserNetTcpip.injectIpPacket(ip));
     if (derp) {
       derp.on("packet", (payload) => {
-        // [32 src][packet]
         const body = payload.length > 32 ? payload.subarray(32) : payload;
-        wg.handleIncoming(body).then(() => {
-          window.UserNetTcpip.injectIpPacket(body);
-        });
+        wg.handleIncoming(body);
       });
     }
     await wg.handshake();
-    internetPath = true;
-    log("internet path partially armed (WG crypto still TODO)");
     return status();
+  }
+
+  function hexToBytes(hex) {
+    const h = hex.replace(/[^0-9a-fA-F]/g, "");
+    const out = new Uint8Array(h.length / 2);
+    for (let i = 0; i < out.length; i++) out[i] = parseInt(h.substr(i * 2, 2), 16);
+    return out;
   }
 
   async function dial(host, port) {
     await start();
-    log("dial", host + ":" + port);
+    if (window.UserNetSocket?.connect) {
+      return window.UserNetSocket.connect(host, port);
+    }
     return window.UserNetTcpip.connectTcp(host, port);
+  }
+
+  function setExitPeerKey(key) {
+    return enableInternetPath(key);
   }
 
   function status() {
     return {
       started,
-      internetPath,
+      socket: !!window.UserNetSocket,
       tcpip: !!window.UserNetTcpip?.getStack?.(),
       tun: !!window.UserNetTcpip?.getTun?.(),
-      derp: !!(derp && derp.ws && derp.ws.readyState === 1),
-      wg: !!(wg && wg.ready),
+      wgReady: !!(wg && wg.ready),
+      wgPeer: !!(wg && wg.peerPublicKey),
+      derp: !!(derp?.ws && derp.ws.readyState === 1),
       control: window.UserNetControl?.status?.() || null,
-      note:
-        "tcpip+TUN live; DERP connect attempted; WireGuard Noise_IK + peer from netmap still TODO for public internet",
+      tip: wg?.ready
+        ? "WG transport keys up — traffic can flow if DERP peer path works"
+        : "Set exit node WG public key: usernet peer <hex64> (from Tailscale machine keys)",
     };
   }
 
   window.UserNet = {
     start,
     enableInternetPath,
+    setExitPeerKey,
     dial,
     status,
   };

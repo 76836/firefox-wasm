@@ -164,7 +164,13 @@
         U.enableInternetPath().then((s) => log(JSON.stringify(s), "ok"));
         return;
       }
-      log("usernet status|start|online", "dim");
+      if (sub.startsWith("peer ")) {
+        const hex = sub.slice(5).trim();
+        log("exit peer key…", "dim");
+        U.setExitPeerKey(hex).then((s) => log(JSON.stringify(s), "ok"));
+        return;
+      }
+      log("usernet status|start|online|peer <hex64>", "dim");
       return;
     }
     if (c === "net" || c.startsWith("net ")) {

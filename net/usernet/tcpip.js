@@ -1,6 +1,5 @@
 /**
- * Step 2–3: userspace TCP/IP + virtual TUN (lwIP via tcpip.js WASM).
- * Spec role: RFC 793 TCP + IP routing on a virtual interface.
+ * Step 2–3: userspace TCP/IP + TUN (tcpip.js / lwIP WASM).
  */
 (function () {
   const TCPIP_ESM = "https://cdn.jsdelivr.net/npm/tcpip@0.4.0/+esm";
@@ -18,41 +17,58 @@
     if (stack) return stack;
     if (ready) return ready;
     ready = (async () => {
-      log("loading tcpip.js WASM…");
-      const mod = await import(TCPIP_ESM);
+      log("loading tcpip.js…");
+      const mod = await import(/* webpackIgnore: true */ TCPIP_ESM);
       const createStack = mod.createStack || mod.default?.createStack;
-      if (!createStack) throw new Error("tcpip createStack missing");
-      stack = await createStack({ initializeLoopback: true });
-      // TUN for L3 packet I/O (step 3)
-      if (typeof stack.createTunInterface === "function") {
-        tun = await stack.createTunInterface({ ip: "100.64.0.1/10" });
-      } else if (stack.interfaces?.createTun) {
-        tun = await stack.interfaces.createTun({ ip: "100.64.0.1/10" });
+      if (!createStack) throw new Error("tcpip: createStack missing");
+
+      stack = await createStack({
+        initializeLoopback: true,
+        // DNS inside stack is useless without egress; we resolve via DoH in socket.js
+      });
+
+      const createTun =
+        stack.createTunInterface?.bind(stack) ||
+        stack.interfaces?.createTun?.bind(stack.interfaces);
+
+      if (createTun) {
+        try {
+          // CGNAT-ish range Tailscale-style
+          tun = await createTun({ ip: "100.64.0.2/10" });
+          log("TUN 100.64.0.2/10");
+        } catch (e) {
+          log("TUN create failed", e.message || e);
+        }
       }
+
       if (tun?.readable) {
-        // Drain TUN → transport hooks (must read or stack stalls)
         (async () => {
           try {
             const reader = tun.readable.getReader();
             for (;;) {
               const { value, done } = await reader.read();
               if (done) break;
-              if (value) {
-                for (const h of packetHandlers) {
-                  try {
-                    h(value);
-                  } catch (_) {}
+              if (!value?.byteLength) continue;
+              for (const h of packetHandlers) {
+                try {
+                  h(value);
+                } catch (err) {
+                  log("pkt handler", err.message || err);
                 }
               }
             }
           } catch (e) {
-            log("tun read ended", e.message || e);
+            log("tun reader end", e.message || e);
           }
         })();
       }
-      log("stack ready", tun ? "+tun" : "no-tun");
+
+      log("stack ready");
       return stack;
-    })();
+    })().catch((e) => {
+      ready = null;
+      throw e;
+    });
     return ready;
   }
 
@@ -66,31 +82,41 @@
     if (!tun?.writable) return false;
     const w = tun.writable.getWriter();
     try {
-      await w.write(u8);
+      await w.write(u8 instanceof Uint8Array ? u8 : new Uint8Array(u8));
       return true;
+    } catch (e) {
+      log("inject fail", e.message || e);
+      return false;
     } finally {
-      w.releaseLock();
+      try {
+        w.releaseLock();
+      } catch (_) {}
     }
   }
 
-  /**
-   * Outbound TCP (step 2 API). Host can be dotted IP or name if stack DNS works.
-   * Without a TUN transport to the internet, only on-stack / loopback targets work.
-   */
-  async function connectTcp(host, port, opts = {}) {
+  async function connectTcp(host, port) {
     const s = await ensure();
-    const connect =
-      s.connectTcp ||
-      s.tcp?.connect ||
-      (s.tcp && s.tcp.connect.bind(s.tcp));
-    if (!connect) throw new Error("stack has no connectTcp");
-    const conn = await connect.call(s.tcp || s, { host, port, ...opts });
+    let connectFn = null;
+    if (typeof s.connectTcp === "function") connectFn = s.connectTcp.bind(s);
+    else if (s.tcp && typeof s.tcp.connect === "function")
+      connectFn = s.tcp.connect.bind(s.tcp);
+
+    if (!connectFn) throw new Error("tcpip: no connectTcp on stack");
+
+    const conn = await connectFn({ host: String(host), port: port | 0 });
+    const readable = conn.readable || conn;
+    const writable = conn.writable;
+    if (!writable) throw new Error("tcpip: connection missing writable");
+
     return {
-      readable: conn.readable || conn,
-      writable: conn.writable,
+      readable,
+      writable,
       close: () => {
         try {
           conn.close?.();
+        } catch (_) {}
+        try {
+          writable.getWriter?.().close?.();
         } catch (_) {}
       },
       raw: conn,
