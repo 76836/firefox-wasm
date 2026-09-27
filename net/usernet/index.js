@@ -44,7 +44,7 @@
   async function armWithExit(st) {
     const peerKey = keyFromStatus(st || window.FFTailscale?.status?.() || {});
     if (!peerKey) {
-      log("no exit node key in netmap yet — enable exit node on phone + approve");
+      log("no exit node key in netmap yet — advertise + approve an exit node on the tailnet");
       return status();
     }
     const keyHex = [...peerKey].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -101,16 +101,29 @@
 
   async function enableInternetPath() {
     await window.UserNetControl.login();
-    // Wait briefly for netmap
-    for (let i = 0; i < 40; i++) {
+    // Wait for Running + netmap (exit node optional but preferred)
+    for (let i = 0; i < 60; i++) {
       const st = window.FFTailscale?.status?.();
-      if (st?.state === "Running" && keyFromStatus(st)) {
-        return armWithExit(st);
+      if (st?.state === "Running") {
+        if (keyFromStatus(st)) return armWithExit(st);
+        if (i === 10 || i === 30) {
+          log(
+            "Running, peers=" +
+              (st.peers || 0) +
+              " exit=" +
+              (st.exitPeer ? st.exitPeer.name || "yes" : "none") +
+              " — waiting for exit node key in netmap"
+          );
+        }
       }
       await new Promise((r) => setTimeout(r, 500));
     }
-    log("timeout waiting for Running+exit — check phone exit node");
-    return armWithExit(window.FFTailscale?.status?.());
+    log("timeout waiting for Running + exit node in netmap");
+    const st = window.FFTailscale?.status?.();
+    if (st?.state === "Running") {
+      log("tip: ts status — if exit is none, approve exit node in Tailscale admin");
+    }
+    return armWithExit(st);
   }
 
   async function dial(host, port) {
@@ -134,7 +147,7 @@
           ? wg?.ready
             ? "Exit node path armed"
             : "Exit node seen — finishing handshake…"
-          : "Login + enable exit node on phone (approve in admin)",
+          : "Login + advertise an exit node on the tailnet (approve in admin)",
     };
   }
 

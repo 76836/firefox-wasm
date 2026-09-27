@@ -382,6 +382,7 @@
 
   function enableForModule() {
     installWebSocketHook();
+    // Must be the magic host intercepted in-page — never a same-origin /wisp/ path
     const url = "wss://wisp.local/ts";
     try {
       if (window.Module) window.Module.wispUrl = url;

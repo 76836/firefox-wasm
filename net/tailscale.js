@@ -82,32 +82,41 @@ window.FFTailscale = (function () {
   }
 
   function pickExitPeer(map) {
-    if (!map?.peers?.length) return null;
-    for (const p of map.peers) {
-      if (p.exitNode || p.ExitNode || p.allowedIPs?.includes?.("0.0.0.0/0")) {
-        return {
-          name: p.name || p.Name || p.Hostinfo?.Hostname,
-          addresses: p.addresses || p.Addresses || [],
-          nodeKey: p.nodeKey || p.NodeKey || p.node_key,
-          machineKey: p.machineKey || p.MachineKey,
-          online: p.online ?? p.Online,
-          raw: p,
-        };
-      }
+    if (!map) return null;
+    const peers = map.peers || map.Peers || [];
+    if (!peers.length) return null;
+
+    function norm(p) {
+      const name =
+        p.name || p.Name || p.Hostinfo?.Hostname || p.hostinfo?.Hostname || p.DNSName || p.dnsName;
+      const addresses = p.addresses || p.Addresses || p.TailscaleIPs || p.tailscaleIPs || [];
+      const nodeKey =
+        p.nodeKey || p.NodeKey || p.node_key || p.PublicKey || p.publicKey || p.Key || p.key;
+      const machineKey = p.machineKey || p.MachineKey || p.machine_key;
+      const online = p.online ?? p.Online;
+      const allowed =
+        p.allowedIPs || p.AllowedIPs || p.allowed_ips || p.PrimaryRoutes || p.primaryRoutes || [];
+      const isExit =
+        !!(p.exitNode || p.ExitNode || p.exit_node) ||
+        (Array.isArray(allowed) &&
+          allowed.some((c) => String(c) === "0.0.0.0/0" || String(c) === "::/0"));
+      return { name, addresses, nodeKey, machineKey, online, raw: p, isExit };
     }
-    // Fallback: first online peer (better than nothing for private net)
-    const online = map.peers.find((p) => p.online || p.Online);
-    return online
-      ? {
-          name: online.name || online.Name,
-          addresses: online.addresses || online.Addresses || [],
-          nodeKey: online.nodeKey || online.NodeKey,
-          machineKey: online.machineKey || online.MachineKey,
-          online: true,
-          raw: online,
-          notExit: true,
-        }
-      : null;
+
+    const normalized = peers.map(norm);
+    const exit = normalized.find((p) => p.isExit);
+    if (exit) {
+      return {
+        name: exit.name,
+        addresses: exit.addresses,
+        nodeKey: exit.nodeKey,
+        machineKey: exit.machineKey,
+        online: exit.online,
+        raw: exit.raw,
+      };
+    }
+    // Do not guess a random peer as exit — that misleads routing
+    return null;
   }
 
   async function loadSdk() {

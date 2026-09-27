@@ -123,7 +123,7 @@
     if (c === "help" || c === "?") {
       log("Firefox-WASM CLI", "ok");
       log("  version          show build commit", "dim");
-      log("  login | ts login open Tailscale login (exit node on phone)", "dim");
+      log("  login | ts login open Tailscale login (use an exit node on your tailnet)", "dim");
       log("  ts status        Tailscale + exit node state", "dim");
       log("  online           login + auto-arm exit node path", "dim");
       log("  status           short network / stack summary", "dim");
@@ -233,7 +233,7 @@
             "ok"
           );
         } else {
-          log("  exit    (none — enable exit node on phone + approve)", "w");
+          log("  exit    (none — advertise an exit node and approve it in admin)", "w");
         }
         if (s.loginUrl && s.state !== "Running") log("  login   " + s.loginUrl, "dim");
         return;
