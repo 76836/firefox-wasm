@@ -109,8 +109,8 @@ if (typeof window === "undefined") {
             if (inIframe && reg.active) {
               reg.active.postMessage({ type: "coepCredentialless", value: true });
             }
-            console.log("[COI] registered, reloading once for isolation");
-            window.location.reload();
+            console.log("[COI] registered — NOT reloading (embedding hosts e.g. WebDesk must own navigation)");
+            /* window.location.reload() removed */
           })
           .catch((err) => console.error("[COI] register failed", err));
       }
