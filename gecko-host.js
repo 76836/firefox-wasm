@@ -205,13 +205,18 @@
     // OPFS mount is opt-in only (?opfs=1). Forcing it collides with SessionStore
     // profile I/O and has been observed to trip wasm "unreachable" freezes.
     try {
-      const u = new URL(location.href);
-      if (u.searchParams.get("opfs") === "1" || opts.opfs === true) {
-        u.searchParams.set("env.GECKO_OPFS_MOUNT", "1");
+      // Never rewrite the host document URL when embedded as WebDesk native
+      if (/\/webdesk\//i.test(location.pathname) || window.__webdeskFirefoxNative) {
+        console.log("[GeckoHost] skip history.replaceState on WebDesk host");
       } else {
-        u.searchParams.delete("env.GECKO_OPFS_MOUNT");
+        const u = new URL(location.href);
+        if (u.searchParams.get("opfs") === "1" || opts.opfs === true) {
+          u.searchParams.set("env.GECKO_OPFS_MOUNT", "1");
+        } else {
+          u.searchParams.delete("env.GECKO_OPFS_MOUNT");
+        }
+        history.replaceState(null, "", u.pathname + u.search + u.hash);
       }
-      history.replaceState(null, "", u.pathname + u.search + u.hash);
     } catch (_) {}
 
     sizeCanvas();
