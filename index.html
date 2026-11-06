@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#38383d" />
   <title>Firefox</title>
   <link rel="icon" href="./assets/firefox-icon.png"  />
-  <link rel="stylesheet" href="./app.css?v=27" />
+  <link rel="stylesheet" href="./app.css?v=28" />
 </head>
 <body>
   <section id="splash" class="sr" aria-hidden="true">
@@ -53,20 +53,56 @@
     <button type="button" id="btn-launch" class="fab fab-go hide" title="Launch">▶</button>
   </div>
 
-  <script src="./coi-serviceworker.js?v=27"></script>
-  <script src="./gecko-host.js?v=27"></script>
-  <script src="./webdesk-fs.js?v=27"></script>
-    <script src="./net/usernet/socket.js?v=27"></script>
-  <script src="./net/usernet/tcpip.js?v=27"></script>
-  <script src="./net/usernet/derp.js?v=27"></script>
-  <script src="./net/usernet/wireguard.js?v=27"></script>
-  <script src="./net/usernet/control.js?v=27"></script>
-  <script src="./net/usernet/index.js?v=27"></script>
-  <script src="./version.js?v=27"></script>
-  <script src="./net/stack.js?v=27"></script>
-  <script src="./net/wisp-local.js?v=27"></script>
-  <script src="./net/tailscale.js?v=27"></script>
-  <script src="./ui.js?v=27"></script>
-  <script type="module" src="./assets/index-D39giZCc.js?v=27"></script>
+  <script src="./coi-serviceworker.js?v=28"></script>
+  <script src="./gecko-host.js?v=28"></script>
+  <script src="./webdesk-fs.js?v=28"></script>
+    <script src="./net/usernet/socket.js?v=28"></script>
+  <script src="./net/usernet/tcpip.js?v=28"></script>
+  <script src="./net/usernet/derp.js?v=28"></script>
+  <script src="./net/usernet/wireguard.js?v=28"></script>
+  <script src="./net/usernet/control.js?v=28"></script>
+  <script src="./net/usernet/index.js?v=28"></script>
+  <script src="./version.js?v=28"></script>
+  <script src="./net/stack.js?v=28"></script>
+  <script src="./net/wisp-local.js?v=28"></script>
+  <script src="./net/tailscale.js?v=28"></script>
+  <script src="./ui.js?v=28"></script>
+  <script>
+    // Gecko chrome bundle needs modern Chromium (optional chaining, ES modules, etc.).
+    // Old Chrome throws "Unexpected reserved word" while parsing index-D39giZCc.js.
+    window.__ffEngineOk = (function () {
+      try {
+        Function("return ({a:1})?.a ?? 0;")();
+        Function("async function x(){ await 0 }");
+        return true;
+      } catch (e) {
+        return false;
+      }
+    })();
+  </script>
+  <script type="module">
+    const showOld = (msg) => {
+      try {
+        const s = document.getElementById("splash-status");
+        if (s) s.textContent = msg;
+        const p = document.getElementById("polish");
+        if (p) {
+          p.classList.remove("hide");
+          const fill = document.getElementById("polish-fill");
+          if (fill) fill.style.width = "100%";
+        }
+        const t = document.getElementById("term-out");
+        if (t) t.textContent = msg;
+      } catch (_) {}
+      console.error("[firefox-wasm]", msg);
+    };
+    if (!window.__ffEngineOk) {
+      showOld("This browser is too old for Firefox WASM. Use Chrome/Edge 90+ (or current Firefox).");
+    } else {
+      import("./assets/index-D39giZCc.js?v=28").catch((e) => {
+        showOld("Failed to load Firefox engine: " + (e && e.message ? e.message : e));
+      });
+    }
+  </script>
 </body>
 </html>
