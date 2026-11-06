@@ -5,14 +5,52 @@
  */
 window.WebDeskFS = (function () {
   function getDB() {
-    return new Promise((res, rej) => {
-      const r = indexedDB.open("WebDeskFiles", 1);
-      r.onupgradeneeded = (e) => {
-        const db = e.target.result;
-        if (!db.objectStoreNames.contains("fs")) db.createObjectStore("fs");
+    // Soft-open WebDeskFiles. If the DB exists without the "fs" store (older/partial
+    // schema on some Chromium builds), bump the version so onupgradeneeded can create it.
+    // Never reject — missing FS just means empty sync.
+    return new Promise((res) => {
+      const openAt = (version) => {
+        let req;
+        try {
+          req = indexedDB.open("WebDeskFiles", version);
+        } catch (e) {
+          console.warn("[WebDeskFS] indexedDB.open failed", e);
+          res(null);
+          return;
+        }
+        req.onupgradeneeded = (e) => {
+          try {
+            const db = e.target.result;
+            if (!db.objectStoreNames.contains("fs")) db.createObjectStore("fs");
+          } catch (err) {
+            console.warn("[WebDeskFS] createObjectStore", err);
+          }
+        };
+        req.onsuccess = (e) => {
+          const db = e.target.result;
+          try {
+            if (!db.objectStoreNames.contains("fs")) {
+              const next = (db.version || 1) + 1;
+              try { db.close(); } catch (_) {}
+              openAt(next);
+              return;
+            }
+          } catch (_) {
+            res(null);
+            return;
+          }
+          res(db);
+        };
+        req.onerror = () => {
+          console.warn("[WebDeskFS] IDB error", req.error);
+          res(null);
+        };
+        req.onblocked = () => {
+          console.warn("[WebDeskFS] IDB blocked");
+          res(null);
+        };
       };
-      r.onsuccess = (e) => res(e.target.result);
-      r.onerror = () => rej(r.error);
+      openAt(1);
     });
   }
 
